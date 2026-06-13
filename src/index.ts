@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runListVaults } from "./cli/list-vaults.js";
 import { runMigrate } from "./cli/migrate.js";
 import { runPurge } from "./cli/purge-1p.js";
 
@@ -52,6 +53,20 @@ program
         dryRun: Boolean(opts.dryRun),
         vault: opts.vault,
       });
+      process.exit(code);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("list-vaults")
+  .description("List 1Password vaults accessible to the service account")
+  .action(async () => {
+    try {
+      const code = await runListVaults();
       process.exit(code);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
