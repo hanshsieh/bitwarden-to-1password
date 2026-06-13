@@ -67,16 +67,28 @@ Import items from an extracted Bitwarden export into a 1Password vault.
 npm start -- migrate --bw-dir /path/to/extracted-bitwarden-export
 ```
 
+#### Vault selection
+
+Use `--vault` to target a specific vault by ID or title (case-insensitive substring match):
+
+```bash
+npm start -- migrate --bw-dir /path/to/export --vault "Personal"
+```
+
+If `--vault` is omitted:
+
+- When the service account has access to **one** vault, that vault is used automatically.
+- When **multiple** vaults are available, the tool prompts you to pick one interactively.
+
 #### Merge strategies
 
 When an item in the export may already exist in 1Password, use `--merge-strategy` to control what happens. The default is `skip`. A match is an existing item with the **same name and username** and the **same item type** (see [Item type mapping](#item-type-mapping) below). Matching only compares items of the same type.
 
-| Strategy | Behavior |
-| --- | --- |
-| `skip` (default) | Skip the import if **at least one** matching item already exists. |
-| `merge` | If **exactly one** matching item exists, merge the export data into it. |
-| `merge-or-create` | If **more than one** matching item exists, create a new item instead of merging. |
-| `abort` | Stop the entire migration if **at least one** matching item already exists. |
+| Strategy | 0 matches | 1 match | 2+ matches |
+| --- | --- | --- | --- |
+| `skip` (default) | create | skip | skip + warn |
+| `merge` | create | merge | skip + warn |
+| `abort` | create | exit 1 | exit 1 |
 
 ```bash
 npm start -- migrate \
@@ -106,11 +118,13 @@ Bitwarden and 1Password both support multiple item types. This tool maps Bitward
 | `4` | Identity | Identity |
 | `5` | SSH Key | SSH Key |
 
+Bitwarden folders are added as 1Password tags. Bitwarden password history is not imported (the 1Password SDK has no API for seeding historical password entries).
+
 ### `purge-1p`
 
 Delete items from a 1Password vault. Useful for resetting a vault before a fresh migration.
 
-By default, the command prompts you to type `yes` before deleting anything:
+By default, the command prompts you to type `yes` before deleting anything (confirmation is skipped when `--dry-run` is set):
 
 ```bash
 npm start -- purge-1p
@@ -122,16 +136,25 @@ Skip the confirmation prompt:
 npm start -- purge-1p --yes
 ```
 
+Preview items that would be deleted without removing anything:
+
+```bash
+npm start -- purge-1p --dry-run
+```
+
 Only delete items updated on or after a given time (ISO 8601):
 
 ```bash
 npm start -- purge-1p --updated-on-or-after 2024-01-01T00:00:00Z
 ```
 
+`--vault` uses the same vault resolution rules as `migrate` (flag match, single vault auto-select, or interactive pick).
+
 Combine options as needed:
 
 ```bash
 npm start -- purge-1p \
+  --vault "Test Migration" \
   --updated-on-or-after 2024-06-01T00:00:00Z \
   --yes
 ```
@@ -146,11 +169,8 @@ npm start -- purge-1p \
 npm install
 npm run dev
 npm run build
+npm test
 ```
-
-## Project status
-
-This repository currently contains project scaffolding only. The subcommands and options documented above are the intended CLI interface; migration and purge logic are not implemented yet.
 
 ## License
 

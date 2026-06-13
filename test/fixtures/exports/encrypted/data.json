@@ -1,0 +1,9 @@
+{
+  "encrypted": true,
+  "passwordProtected": true,
+  "salt": "base64-encoded-salt",
+  "kdfIterations": 600000,
+  "kdfType": 0,
+  "encKeyValidation_DO_NOT_EDIT": "encrypted-validation-string",
+  "data": "encrypted-vault-data-base64"
+}
