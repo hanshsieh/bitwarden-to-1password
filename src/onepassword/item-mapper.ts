@@ -48,9 +48,9 @@ export class OnePasswordItemMapper {
   ): MappedItem {
     const category = OnePasswordItemMapper.bitwardenTypeToCategory(item.type);
     const tags = this.collectTags(item, exportData);
-    const customFields = (item.fields ?? []).map((field, index) =>
-      this.mapCustomField(field, index),
-    );
+    const customFields = (item.fields ?? [])
+      .filter((field) => field.type !== 3)
+      .map((field, index) => this.mapCustomField(field, index));
 
     let builtinFields: ItemField[] = [];
     let notes = item.notes ?? "";
@@ -397,12 +397,6 @@ export class OnePasswordItemMapper {
       case 2:
         fieldType = ItemFieldType.Text;
         value = value.toLowerCase() === "true" ? "true" : "false";
-        break;
-      case 3:
-        // Linked fields reference other item fields; we cannot resolve them offline.
-        fieldType = ItemFieldType.Text;
-        value = field.linkedId != null ? `[linked field ${field.linkedId}]` : "";
-        title = `${field.name} (linked)`;
         break;
     }
 

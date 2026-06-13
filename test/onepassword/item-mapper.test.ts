@@ -50,6 +50,10 @@ describe("item-mapper", () => {
     const pin = mapped.params.fields?.find((f) => f.title === "Secret PIN");
     assert.equal(pin?.fieldType, ItemFieldType.Concealed);
     assert.equal(pin?.sectionId, CUSTOM_FIELDS_SECTION_ID);
+
+    assert.ok(
+      !mapped.params.fields?.some((f) => f.title.includes("Linked field")),
+    );
   });
 
   it("maps secure note body to notes", () => {

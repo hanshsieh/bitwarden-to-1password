@@ -172,6 +172,13 @@ export function hasFido2Credentials(item: {
   return (item.login?.fido2Credentials?.length ?? 0) > 0;
 }
 
+/** True when an item has Bitwarden linked custom fields (type 3). */
+export function hasLinkedCustomFields(item: {
+  fields?: BitwardenCustomField[];
+}): boolean {
+  return (item.fields ?? []).some((field) => field.type === 3);
+}
+
 /** True when a login item has at least one URI using regex match detection. */
 export function hasRegexLoginUri(item: { login?: BitwardenLogin }): boolean {
   return (item.login?.uris ?? []).some(

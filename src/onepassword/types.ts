@@ -65,6 +65,8 @@ export interface MigrationSummary {
   archiveFailures: number;
   /** Login item names whose FIDO2 credentials could not be migrated. */
   fidoCredentialsSkipped: string[];
+  /** Item names with linked custom fields omitted (1Password has no equivalent). */
+  linkedFieldsSkipped: string[];
   /** Login item names with regex URIs mapped to Never autofill for manual review. */
   regexUrlItems: string[];
   aborted: boolean;

@@ -114,6 +114,33 @@ describe("parse-export", () => {
     );
   });
 
+  it("accepts linked custom fields with omitted value", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Bank Login",
+            login: { username: "user", password: "secret" },
+            fields: [
+              { type: 0, name: "Account", value: "12345" },
+              { type: 3, name: "Password", linkedId: 100 },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const parsed = parseExport(dir);
+    assert.equal(parsed.items.length, 1);
+    assert.equal(parsed.items[0]?.fields.length, 2);
+    assert.equal(parsed.items[0]?.fields[1]?.type, 3);
+    assert.equal(parsed.items[0]?.fields[1]?.value, null);
+  });
+
   it("accepts custom fields and URIs with omitted linkedId and match", () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
     writeFileSync(

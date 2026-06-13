@@ -150,6 +150,43 @@ describe("migrator", () => {
     assert.deepEqual(summary.fidoCredentialsSkipped, ["Passkey Login"]);
   });
 
+  it("reports items with linked custom fields in summary", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Bank Login",
+            login: { username: "user@example.com", password: "secret" },
+            fields: [
+              { type: 0, name: "Account", value: "12345" },
+              { type: 3, name: "Password", linkedId: 100 },
+            ],
+          },
+          {
+            type: 2,
+            name: "Plain Note",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+
+    assert.equal(summary.created, 2);
+    assert.deepEqual(summary.linkedFieldsSkipped, ["Bank Login"]);
+  });
+
   it("reports items with regex URLs in summary", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(

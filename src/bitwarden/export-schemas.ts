@@ -19,7 +19,7 @@ export const CIPHER_SUB_OBJECT_KEY: Record<
 
 export const bitwardenCustomFieldSchema = z.object({
   name: z.string(),
-  value: z.string().nullable(),
+  value: z.string().nullish().default(null),
   type: z.union([
     z.literal(0),
     z.literal(1),

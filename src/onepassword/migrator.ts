@@ -4,6 +4,7 @@ import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
 import {
   hasFido2Credentials,
+  hasLinkedCustomFields,
   hasRegexLoginUri,
   isArchivedItem,
 } from "../bitwarden/types.js";
@@ -81,6 +82,9 @@ export class Migrator {
     }
 
     summary.fidoCredentialsSkipped = this.collectFidoCredentialSkippedItems(
+      exportData.items,
+    );
+    summary.linkedFieldsSkipped = this.collectLinkedFieldSkippedItems(
       exportData.items,
     );
     summary.regexUrlItems = this.collectRegexUrlItems(exportData.items);
@@ -302,6 +306,12 @@ export class Migrator {
     return items.filter(hasFido2Credentials).map((item) => item.name);
   }
 
+  private collectLinkedFieldSkippedItems(
+    items: ParsedBitwardenExport["items"],
+  ): string[] {
+    return items.filter(hasLinkedCustomFields).map((item) => item.name);
+  }
+
   private collectRegexUrlItems(
     items: ParsedBitwardenExport["items"],
   ): string[] {
@@ -319,6 +329,7 @@ export class Migrator {
       archived: 0,
       archiveFailures: 0,
       fidoCredentialsSkipped: [],
+      linkedFieldsSkipped: [],
       regexUrlItems: [],
       aborted: false,
     };
@@ -340,6 +351,10 @@ export class Migrator {
           label: "FIDO2 credentials skipped",
           value: summary.fidoCredentialsSkipped.length,
         },
+        {
+          label: "Linked fields skipped",
+          value: summary.linkedFieldsSkipped.length,
+        },
         { label: "Regex URL items", value: summary.regexUrlItems.length },
       ]),
     );
@@ -349,6 +364,15 @@ export class Migrator {
         `${prefix}FIDO2 credentials not migrated (1Password SDK does not support passkeys):`,
       );
       for (const name of summary.fidoCredentialsSkipped) {
+        console.log(`  - ${name}`);
+      }
+    }
+
+    if (summary.linkedFieldsSkipped.length > 0) {
+      console.log(
+        `${prefix}Linked custom fields not migrated (1Password has no linked field type):`,
+      );
+      for (const name of summary.linkedFieldsSkipped) {
         console.log(`  - ${name}`);
       }
     }
