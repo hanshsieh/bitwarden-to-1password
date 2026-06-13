@@ -34,6 +34,7 @@ export interface OnePasswordClient {
       vaultId: string,
       itemIds: string[],
     ): Promise<ItemsDeleteAllResponse>;
+    archive(vaultId: string, itemId: string): Promise<void>;
     files: {
       attach(item: Item, fileParams: FileCreateParams): Promise<Item>;
     };
@@ -60,6 +61,12 @@ export interface MigrationSummary {
   failed: number;
   attachmentsUploaded: number;
   attachmentFailures: number;
+  archived: number;
+  archiveFailures: number;
+  /** Login item names whose FIDO2 credentials could not be migrated. */
+  fidoCredentialsSkipped: string[];
+  /** Login item names with regex URIs mapped to Never autofill for manual review. */
+  regexUrlItems: string[];
   aborted: boolean;
 }
 

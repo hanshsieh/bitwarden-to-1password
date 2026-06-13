@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
 import { migrate } from "../../src/onepassword/migrator.js";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
@@ -103,5 +105,121 @@ describe("migrator", () => {
     assert.equal(summary.merged, 1);
     assert.equal(summary.created, 4);
     assert.equal(state.putCalls.length, 1);
+  });
+
+  it("reports items with FIDO2 credentials in summary", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Passkey Login",
+            login: {
+              username: "user@example.com",
+              password: "secret",
+              fido2Credentials: [
+                {
+                  credentialId: "cred-1",
+                  rpId: "example.com",
+                  keyValue: "key-material",
+                },
+              ],
+            },
+          },
+          {
+            type: 2,
+            name: "Plain Note",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+
+    assert.equal(summary.created, 2);
+    assert.deepEqual(summary.fidoCredentialsSkipped, ["Passkey Login"]);
+  });
+
+  it("reports items with regex URLs in summary", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Regex Login",
+            login: {
+              username: "user@example.com",
+              password: "secret",
+              uris: [
+                {
+                  uri: "^https://.*\\.example\\.com$",
+                  match: 4,
+                },
+              ],
+            },
+          },
+          {
+            type: 2,
+            name: "Plain Note",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+
+    assert.equal(summary.created, 2);
+    assert.deepEqual(summary.regexUrlItems, ["Regex Login"]);
+  });
+
+  it("archives items when export has archivedDate", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const { client, state } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+
+    assert.equal(summary.created, 1);
+    assert.equal(summary.archived, 1);
+    assert.equal(state.archiveCalls.length, 1);
+    assert.equal(state.archiveCalls[0], "created-1");
   });
 });

@@ -3,6 +3,11 @@ import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
 import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
 import {
+  hasFido2Credentials,
+  hasRegexLoginUri,
+  isArchivedItem,
+} from "../bitwarden/types.js";
+import {
   ATTACHMENTS_SECTION_ID,
   OnePasswordItemMapper,
 } from "./item-mapper.js";
@@ -74,6 +79,10 @@ export class Migrator {
       );
     }
 
+    summary.fidoCredentialsSkipped = this.collectFidoCredentialSkippedItems(
+      exportData.items,
+    );
+    summary.regexUrlItems = this.collectRegexUrlItems(exportData.items);
     this.printSummary(summary, options.dryRun);
     return summary;
   }
@@ -114,7 +123,7 @@ export class Migrator {
     }
 
     if (options.dryRun) {
-      this.logDryRunAction(decision.action, item.name, attachments);
+      this.logDryRunAction(decision.action, item, attachments);
       if (decision.action === "create") summary.created++;
       if (decision.action === "merge") summary.merged++;
       return;
@@ -122,10 +131,16 @@ export class Migrator {
 
     try {
       if (decision.action === "create") {
-        await this.createItem(item.name, mapped, attachmentScanner, summary);
+        await this.createItem(
+          item,
+          mapped,
+          options.vaultId,
+          attachmentScanner,
+          summary,
+        );
       } else if (decision.action === "merge" && decision.targetItemId) {
         await this.mergeItem(
-          item.name,
+          item,
           options.vaultId,
           decision.targetItemId,
           mapped,
@@ -141,24 +156,31 @@ export class Migrator {
   }
 
   private async createItem(
-    itemName: string,
+    sourceItem: ParsedBitwardenExport["items"][number],
     mapped: MappedItem,
+    vaultId: string,
     attachmentScanner: BitwardenAttachmentScanner,
     summary: MigrationSummary,
   ): Promise<void> {
     const created = await this.client.items.create(mapped.params);
     summary.created++;
-    console.log(`created: ${itemName} (${created.id})`);
-    await this.uploadAttachments(
+    console.log(`created: ${sourceItem.name} (${created.id})`);
+    const withAttachments = await this.uploadAttachments(
       created,
       mapped,
       attachmentScanner,
       summary,
     );
+    await this.applyArchivedState(
+      vaultId,
+      withAttachments.id,
+      sourceItem,
+      summary,
+    );
   }
 
   private async mergeItem(
-    itemName: string,
+    sourceItem: ParsedBitwardenExport["items"][number],
     vaultId: string,
     targetItemId: string,
     mapped: MappedItem,
@@ -176,14 +198,47 @@ export class Migrator {
     );
     const saved = await this.client.items.put(updated);
     summary.merged++;
-    console.log(`merged: ${itemName} (${saved.id})`);
-    await this.uploadAttachments(
+    console.log(`merged: ${sourceItem.name} (${saved.id})`);
+    const withAttachments = await this.uploadAttachments(
       saved,
       mapped,
       attachmentScanner,
       summary,
       MergeEngine.existingAttachmentFieldIds(existing),
     );
+    await this.applyArchivedState(
+      vaultId,
+      withAttachments.id,
+      sourceItem,
+      summary,
+    );
+  }
+
+  /**
+   * Move a migrated item to the 1Password Archive when Bitwarden had archived it.
+   * Active export items are left active (1Password has no "unarchive" step here).
+   */
+  private async applyArchivedState(
+    vaultId: string,
+    itemId: string,
+    sourceItem: ParsedBitwardenExport["items"][number],
+    summary: MigrationSummary,
+  ): Promise<void> {
+    if (!isArchivedItem(sourceItem)) {
+      return;
+    }
+
+    try {
+      await this.client.items.archive(vaultId, itemId);
+      summary.archived++;
+      console.log(`archived: ${sourceItem.name} (${itemId})`);
+    } catch (error) {
+      summary.archiveFailures++;
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `archive failed: ${sourceItem.name} (${itemId}) — ${message}`,
+      );
+    }
   }
 
   /** Attach export files to a 1Password item, skipping field IDs already present. */
@@ -228,15 +283,28 @@ export class Migrator {
 
   private logDryRunAction(
     action: "create" | "merge",
-    itemName: string,
+    item: ParsedBitwardenExport["items"][number],
     attachments: MappedItem["attachments"],
   ): void {
-    console.log(`${action}: ${itemName}`);
+    const archivedSuffix = isArchivedItem(item) ? " (will archive)" : "";
+    console.log(`${action}: ${item.name}${archivedSuffix}`);
     if (attachments.length > 0) {
       console.log(
         `  attachments: ${attachments.map((a) => a.filename).join(", ")}`,
       );
     }
+  }
+
+  private collectFidoCredentialSkippedItems(
+    items: ParsedBitwardenExport["items"],
+  ): string[] {
+    return items.filter(hasFido2Credentials).map((item) => item.name);
+  }
+
+  private collectRegexUrlItems(
+    items: ParsedBitwardenExport["items"],
+  ): string[] {
+    return items.filter(hasRegexLoginUri).map((item) => item.name);
   }
 
   private emptySummary(): MigrationSummary {
@@ -247,6 +315,10 @@ export class Migrator {
       failed: 0,
       attachmentsUploaded: 0,
       attachmentFailures: 0,
+      archived: 0,
+      archiveFailures: 0,
+      fidoCredentialsSkipped: [],
+      regexUrlItems: [],
       aborted: false,
     };
   }
@@ -254,8 +326,26 @@ export class Migrator {
   private printSummary(summary: MigrationSummary, dryRun: boolean): void {
     const prefix = dryRun ? "[dry-run] " : "";
     console.log(
-      `${prefix}Summary: created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failed=${summary.failed} attachments=${summary.attachmentsUploaded} attachment_failures=${summary.attachmentFailures}`,
+      `${prefix}Summary: created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failed=${summary.failed} archived=${summary.archived} archive_failures=${summary.archiveFailures} attachments=${summary.attachmentsUploaded} attachment_failures=${summary.attachmentFailures} fido_credentials_skipped=${summary.fidoCredentialsSkipped.length} regex_url_items=${summary.regexUrlItems.length}`,
     );
+
+    if (summary.fidoCredentialsSkipped.length > 0) {
+      console.log(
+        `${prefix}FIDO2 credentials not migrated (1Password SDK does not support passkeys):`,
+      );
+      for (const name of summary.fidoCredentialsSkipped) {
+        console.log(`  - ${name}`);
+      }
+    }
+
+    if (summary.regexUrlItems.length > 0) {
+      console.log(
+        `${prefix}Regex URLs mapped to Never autofill (review and update manually):`,
+      );
+      for (const name of summary.regexUrlItems) {
+        console.log(`  - ${name}`);
+      }
+    }
   }
 }
 

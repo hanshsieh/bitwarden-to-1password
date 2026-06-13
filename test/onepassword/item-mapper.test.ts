@@ -6,9 +6,11 @@ import {
   ATTACHMENTS_SECTION_ID,
   CUSTOM_FIELDS_SECTION_ID,
   SSH_KEYS_SECTION_ID,
+  bitwardenUriMatchToAutofillBehavior,
   extractBitwardenUsername,
   mapItem,
 } from "../../src/onepassword/item-mapper.js";
+import { BITWARDEN_URI_MATCH } from "../../src/bitwarden/types.js";
 import {
   AutofillBehavior,
   ItemCategory,
@@ -106,5 +108,71 @@ describe("item-mapper", () => {
       mapped.params.sections?.some((s) => s.id === ATTACHMENTS_SECTION_ID),
     );
     assert.ok(mapped.attachmentFieldIds.get("/tmp/readme.txt"));
+  });
+
+  it("maps Bitwarden URI match modes to 1Password autofill behavior", () => {
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(BITWARDEN_URI_MATCH.Domain),
+      AutofillBehavior.AnywhereOnWebsite,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(BITWARDEN_URI_MATCH.Host),
+      AutofillBehavior.ExactDomain,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(BITWARDEN_URI_MATCH.StartsWith),
+      AutofillBehavior.AnywhereOnWebsite,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(BITWARDEN_URI_MATCH.Exact),
+      AutofillBehavior.ExactDomain,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(
+        BITWARDEN_URI_MATCH.RegularExpression,
+      ),
+      AutofillBehavior.Never,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(BITWARDEN_URI_MATCH.Never),
+      AutofillBehavior.Never,
+    );
+    assert.equal(
+      bitwardenUriMatchToAutofillBehavior(null),
+      AutofillBehavior.AnywhereOnWebsite,
+    );
+  });
+
+  it("applies URI match behavior when mapping login websites", () => {
+    const login = {
+      ...parsed.items.find((i) => i.type === 1)!,
+      login: {
+        username: "user@example.com",
+        password: "secret",
+        uris: [
+          { uri: "https://host.example.com", match: BITWARDEN_URI_MATCH.Host },
+          {
+            uri: "^https://.*\\.example\\.com$",
+            match: BITWARDEN_URI_MATCH.RegularExpression,
+          },
+          { uri: "https://blocked.example.com", match: BITWARDEN_URI_MATCH.Never },
+        ],
+      },
+    };
+    const mapped = mapItem(login, parsed, vaultId);
+
+    assert.equal(mapped.params.websites?.length, 3);
+    assert.equal(
+      mapped.params.websites?.[0]?.autofillBehavior,
+      AutofillBehavior.ExactDomain,
+    );
+    assert.equal(
+      mapped.params.websites?.[1]?.autofillBehavior,
+      AutofillBehavior.Never,
+    );
+    assert.equal(
+      mapped.params.websites?.[2]?.autofillBehavior,
+      AutofillBehavior.Never,
+    );
   });
 });

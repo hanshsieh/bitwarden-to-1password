@@ -13,9 +13,23 @@ export interface BitwardenCustomField {
   linkedId: number | null;
 }
 
+/** Bitwarden login URI match modes (see Bitwarden UriMatchType). */
+export const BITWARDEN_URI_MATCH = {
+  Domain: 0,
+  Host: 1,
+  StartsWith: 2,
+  Exact: 3,
+  RegularExpression: 4,
+  Never: 5,
+} as const;
+
 export interface BitwardenLoginUri {
   uri: string | null;
   match: number | null;
+}
+
+export interface BitwardenFido2Credential {
+  credentialId: string;
 }
 
 export interface BitwardenLogin {
@@ -23,6 +37,7 @@ export interface BitwardenLogin {
   password?: string | null;
   totp?: string | null;
   uris?: BitwardenLoginUri[];
+  fido2Credentials?: BitwardenFido2Credential[];
 }
 
 export interface BitwardenSecureNote {
@@ -85,6 +100,7 @@ export interface BitwardenItemBase {
   creationDate?: string;
   revisionDate?: string;
   deletedDate?: string | null;
+  archivedDate?: string | null;
   login?: BitwardenLogin;
   secureNote?: BitwardenSecureNote;
   card?: BitwardenCard;
@@ -120,6 +136,7 @@ export interface ParsedBitwardenItem {
   folderId: string | null;
   collectionIds: string[];
   fields: BitwardenCustomField[];
+  archivedDate: string | null;
   login?: BitwardenLogin;
   secureNote?: BitwardenSecureNote;
   card?: BitwardenCard;
@@ -139,4 +156,25 @@ export interface BitwardenAttachment {
   attachmentId: string | null;
   filename: string;
   filePath: string;
+}
+
+/** True when the export item was archived in Bitwarden (not trashed). */
+export function isArchivedItem(item: {
+  archivedDate: string | null;
+}): boolean {
+  return item.archivedDate != null;
+}
+
+/** True when a login item has FIDO2/passkey credentials in the export. */
+export function hasFido2Credentials(item: {
+  login?: BitwardenLogin;
+}): boolean {
+  return (item.login?.fido2Credentials?.length ?? 0) > 0;
+}
+
+/** True when a login item has at least one URI using regex match detection. */
+export function hasRegexLoginUri(item: { login?: BitwardenLogin }): boolean {
+  return (item.login?.uris ?? []).some(
+    (uri) => uri.match === BITWARDEN_URI_MATCH.RegularExpression,
+  );
 }

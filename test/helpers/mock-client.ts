@@ -19,6 +19,7 @@ export interface MockClientState {
   createCalls: ItemCreateParams[];
   putCalls: Item[];
   deleteCalls: string[];
+  archiveCalls: string[];
   attachCalls: FileCreateParams[];
 }
 
@@ -54,6 +55,7 @@ export function createMockClient(
     createCalls: [],
     putCalls: [],
     deleteCalls: [],
+    archiveCalls: [],
     attachCalls: [],
   };
 
@@ -126,6 +128,16 @@ export function createMockClient(
           individualResponses[id] = { content: undefined };
         }
         return { individualResponses };
+      },
+      archive: async (_vaultId, itemId) => {
+        state.archiveCalls.push(itemId);
+        const idx = state.overviews.findIndex((o) => o.id === itemId);
+        if (idx >= 0) {
+          state.overviews[idx] = {
+            ...state.overviews[idx]!,
+            state: ItemState.Archived,
+          };
+        }
       },
       files: {
         attach: async (item, fileParams) => {

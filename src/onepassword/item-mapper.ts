@@ -163,7 +163,7 @@ export class OnePasswordItemMapper {
       .map((u, index) => ({
         url: u.uri!.trim(),
         label: index === 0 ? "website" : `website ${index + 1}`,
-        autofillBehavior: AutofillBehavior.AnywhereOnWebsite,
+        autofillBehavior: bitwardenUriMatchToAutofillBehavior(u.match),
       }));
   }
 
@@ -504,4 +504,27 @@ export function bitwardenTypeToCategory(
   type: ParsedBitwardenItem["type"],
 ): ItemCategory {
   return OnePasswordItemMapper.bitwardenTypeToCategory(type);
+}
+
+/**
+ * Map a Bitwarden URI match mode to 1Password autofill behavior.
+ *
+ * Regex URIs have no 1Password equivalent and are mapped to Never so users
+ * can review and fix them manually after migration.
+ */
+export function bitwardenUriMatchToAutofillBehavior(
+  match: number | null,
+): AutofillBehavior {
+  switch (match) {
+    case 1:
+    case 3:
+      return AutofillBehavior.ExactDomain;
+    case 4:
+    case 5:
+      return AutofillBehavior.Never;
+    case 0:
+    case 2:
+    default:
+      return AutofillBehavior.AnywhereOnWebsite;
+  }
 }

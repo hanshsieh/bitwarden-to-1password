@@ -34,11 +34,18 @@ export const bitwardenLoginUriSchema = z.object({
   match: z.number().nullable(),
 });
 
+export const bitwardenFido2CredentialSchema = z
+  .object({
+    credentialId: z.string(),
+  })
+  .passthrough();
+
 export const bitwardenLoginSchema = z.object({
   username: z.string().nullable().optional(),
   password: z.string().nullable().optional(),
   totp: z.string().nullable().optional(),
   uris: z.array(bitwardenLoginUriSchema).optional(),
+  fido2Credentials: z.array(bitwardenFido2CredentialSchema).optional(),
 });
 
 export const bitwardenSecureNoteSchema = z.object({
@@ -111,6 +118,7 @@ export const bitwardenItemSchema = z
     creationDate: z.string().optional(),
     revisionDate: z.string().optional(),
     deletedDate: z.string().nullable().optional(),
+    archivedDate: z.string().nullable().optional(),
     login: bitwardenLoginSchema.optional(),
     secureNote: bitwardenSecureNoteSchema.optional(),
     card: bitwardenCardSchema.optional(),

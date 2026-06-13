@@ -114,6 +114,7 @@ export class BitwardenExportParser {
       folderId: item.folderId ?? null,
       collectionIds: item.collectionIds ?? [],
       fields: item.fields ?? [],
+      archivedDate: item.archivedDate ?? null,
     };
 
     if (item.login) parsed.login = item.login;

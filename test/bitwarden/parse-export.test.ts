@@ -43,4 +43,53 @@ describe("parse-export", () => {
     );
     assert.throws(() => parseExport(dir), /missing required field "name"/);
   });
+
+  it("preserves login fido2Credentials from export", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Passkey Login",
+            login: {
+              username: "user@example.com",
+              fido2Credentials: [{ credentialId: "cred-1", rpId: "example.com" }],
+            },
+          },
+        ],
+      }),
+    );
+
+    const parsed = parseExport(dir);
+    assert.equal(parsed.items[0]?.login?.fido2Credentials?.length, 1);
+    assert.equal(
+      parsed.items[0]?.login?.fido2Credentials?.[0]?.credentialId,
+      "cred-1",
+    );
+  });
+
+  it("includes archived items with archivedDate preserved", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const parsed = parseExport(dir);
+    assert.equal(parsed.items.length, 1);
+    assert.equal(parsed.items[0]?.archivedDate, "2026-06-13T08:16:07.105Z");
+  });
 });
