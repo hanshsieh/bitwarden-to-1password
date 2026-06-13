@@ -13,6 +13,10 @@ import type {
   ParsedBitwardenItem,
 } from "../bitwarden/types.js";
 import { slugify } from "../utils/normalize.js";
+import {
+  collectBitwardenLabels,
+  mapBitwardenLabelsForSdk,
+} from "./tags.js";
 import type { MappedItem } from "./types.js";
 
 /** Well-known 1Password section IDs used when mapping Bitwarden data. */
@@ -37,8 +41,10 @@ export class OnePasswordItemMapper {
   /**
    * Convert one Bitwarden cipher into 1Password {@link ItemCreateParams}.
    *
-   * Folder and collection names become tags. Custom fields land in a dedicated
-   * section. Attachment metadata is returned separately for upload after create.
+   * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
+   * omitted because the 1Password SDK rejects them as tags. Custom
+   * fields land in a dedicated section. Attachment metadata is returned separately
+   * for upload after create.
    */
   map(
     item: ParsedBitwardenItem,
@@ -47,7 +53,9 @@ export class OnePasswordItemMapper {
     attachments: BitwardenAttachment[] = [],
   ): MappedItem {
     const category = OnePasswordItemMapper.bitwardenTypeToCategory(item.type);
-    const tags = this.collectTags(item, exportData);
+    const tags = mapBitwardenLabelsForSdk(
+      collectBitwardenLabels(item, exportData),
+    );
     const customFields = (item.fields ?? [])
       .filter((field) => field.type !== 3)
       .map((field, index) => this.mapCustomField(field, index));
@@ -131,26 +139,6 @@ export class OnePasswordItemMapper {
     type: ParsedBitwardenItem["type"],
   ): ItemCategory {
     return OnePasswordItemMapper.BW_TYPE_TO_CATEGORY[type];
-  }
-
-  /** Turn Bitwarden folder/collection membership into 1Password tags. */
-  private collectTags(
-    item: ParsedBitwardenItem,
-    exportData: ParsedBitwardenExport,
-  ): string[] {
-    const tags: string[] = [];
-
-    if (item.folderId) {
-      const folderName = exportData.folders.get(item.folderId);
-      if (folderName) tags.push(folderName);
-    }
-
-    for (const collectionId of item.collectionIds) {
-      const collectionName = exportData.collections.get(collectionId);
-      if (collectionName) tags.push(collectionName);
-    }
-
-    return tags;
   }
 
   /** Map Bitwarden login URIs to 1Password website autofill entries. */

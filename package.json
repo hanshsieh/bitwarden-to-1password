@@ -29,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@1password/sdk": "^0.4.0",
+    "bottleneck": "^2.19.5",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"

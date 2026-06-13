@@ -8,6 +8,7 @@ import {
   hasRegexLoginUri,
   isArchivedItem,
 } from "../bitwarden/types.js";
+import { hasNonAsciiBitwardenLabels } from "./tags.js";
 import {
   ATTACHMENTS_SECTION_ID,
   OnePasswordItemMapper,
@@ -86,6 +87,10 @@ export class Migrator {
     );
     summary.linkedFieldsSkipped = this.collectLinkedFieldSkippedItems(
       exportData.items,
+    );
+    summary.nonAsciiTagsSkipped = this.collectNonAsciiTagItems(
+      exportData.items,
+      exportData,
     );
     summary.regexUrlItems = this.collectRegexUrlItems(exportData.items);
     this.printSummary(summary, options.dryRun);
@@ -312,6 +317,15 @@ export class Migrator {
     return items.filter(hasLinkedCustomFields).map((item) => item.name);
   }
 
+  private collectNonAsciiTagItems(
+    items: ParsedBitwardenExport["items"],
+    exportData: ParsedBitwardenExport,
+  ): string[] {
+    return items
+      .filter((item) => hasNonAsciiBitwardenLabels(item, exportData))
+      .map((item) => item.name);
+  }
+
   private collectRegexUrlItems(
     items: ParsedBitwardenExport["items"],
   ): string[] {
@@ -330,6 +344,7 @@ export class Migrator {
       archiveFailures: 0,
       fidoCredentialsSkipped: [],
       linkedFieldsSkipped: [],
+      nonAsciiTagsSkipped: [],
       regexUrlItems: [],
       aborted: false,
     };
@@ -355,6 +370,10 @@ export class Migrator {
           label: "Linked fields skipped",
           value: summary.linkedFieldsSkipped.length,
         },
+        {
+          label: "Non-ASCII tags skipped",
+          value: summary.nonAsciiTagsSkipped.length,
+        },
         { label: "Regex URL items", value: summary.regexUrlItems.length },
       ]),
     );
@@ -373,6 +392,15 @@ export class Migrator {
         `${prefix}Linked custom fields not migrated (1Password has no linked field type):`,
       );
       for (const name of summary.linkedFieldsSkipped) {
+        console.log(`  - ${name}`);
+      }
+    }
+
+    if (summary.nonAsciiTagsSkipped.length > 0) {
+      console.log(
+        `${prefix}Non-ASCII folder/collection labels not migrated (SDK tags must be ASCII):`,
+      );
+      for (const name of summary.nonAsciiTagsSkipped) {
         console.log(`  - ${name}`);
       }
     }

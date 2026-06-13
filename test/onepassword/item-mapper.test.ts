@@ -56,6 +56,25 @@ describe("item-mapper", () => {
     );
   });
 
+  it("omits non-ASCII folder names from tags", () => {
+    const item = parsed.items.find((i) => i.type === 1)!;
+    const exportData = {
+      ...parsed,
+      folders: new Map([
+        ...parsed.folders,
+        ["folder-cloud-0001", "雲端空間"],
+      ]),
+    };
+    const mapped = mapItem(
+      { ...item, folderId: "folder-cloud-0001" },
+      exportData,
+      vaultId,
+    );
+
+    assert.equal(mapped.params.tags, undefined);
+    assert.equal(mapped.params.notes, "Login notes");
+  });
+
   it("maps secure note body to notes", () => {
     const note = parsed.items.find((i) => i.type === 2)!;
     const mapped = mapItem(note, parsed, vaultId);

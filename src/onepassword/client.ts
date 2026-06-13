@@ -1,4 +1,5 @@
 import { createClient as createSdkClient, type Client } from "@1password/sdk";
+import { createRateLimitedClient } from "./rate-limited-client.js";
 import type { OnePasswordClient } from "./types.js";
 
 /**
@@ -36,12 +37,13 @@ export class OnePasswordClientFactory {
       integrationVersion: this.integrationVersion,
     });
 
-    return client as unknown as OnePasswordClient;
+    return createRateLimitedClient(client as unknown as OnePasswordClient);
   }
 
   /** Wrap an existing SDK client for dependency injection in tests. */
-  wrap(client: Client): OnePasswordClient {
-    return client as unknown as OnePasswordClient;
+  wrap(client: Client, rateLimited = false): OnePasswordClient {
+    const wrapped = client as unknown as OnePasswordClient;
+    return rateLimited ? createRateLimitedClient(wrapped) : wrapped;
   }
 }
 
@@ -52,6 +54,6 @@ export async function createClient(): Promise<OnePasswordClient> {
   return defaultFactory.create();
 }
 
-export function wrapClient(client: Client): OnePasswordClient {
-  return defaultFactory.wrap(client);
+export function wrapClient(client: Client, rateLimited = false): OnePasswordClient {
+  return defaultFactory.wrap(client, rateLimited);
 }

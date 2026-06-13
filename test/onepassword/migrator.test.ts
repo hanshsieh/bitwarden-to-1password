@@ -187,6 +187,40 @@ describe("migrator", () => {
     assert.deepEqual(summary.linkedFieldsSkipped, ["Bank Login"]);
   });
 
+  it("reports items with non-ASCII folder labels in summary", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        folders: [{ id: "folder-1", name: "雲端空間" }],
+        items: [
+          {
+            type: 1,
+            name: "adrive",
+            folderId: "folder-1",
+            login: {
+              username: "user@example.com",
+              password: "secret",
+              uris: [{ uri: "https://www.adrive.com" }],
+            },
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+
+    assert.equal(summary.created, 1);
+    assert.deepEqual(summary.nonAsciiTagsSkipped, ["adrive"]);
+  });
+
   it("reports items with regex URLs in summary", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(
