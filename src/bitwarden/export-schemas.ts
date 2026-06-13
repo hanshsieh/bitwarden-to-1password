@@ -26,12 +26,12 @@ export const bitwardenCustomFieldSchema = z.object({
     z.literal(2),
     z.literal(3),
   ]),
-  linkedId: z.number().nullable(),
+  linkedId: z.number().nullable().default(null),
 });
 
 export const bitwardenLoginUriSchema = z.object({
   uri: z.string().nullable(),
-  match: z.number().nullable(),
+  match: z.number().nullable().default(null),
 });
 
 export const bitwardenFido2CredentialSchema = z
@@ -199,40 +199,97 @@ export function parseBitwardenExport(data: unknown): BitwardenExportInput {
 
   const result = bitwardenExportSchema.safeParse(data);
   if (!result.success) {
-    throw formatExportValidationError(result.error);
+    throw formatExportValidationError(result.error, data);
   }
 
   return result.data;
 }
 
-/** Map a Zod export-level error to a user-facing message. */
-function formatExportValidationError(error: z.ZodError): Error {
-  for (const issue of error.issues) {
-    if (issue.path[0] === "items") {
-      if (issue.path.length === 1 && issue.code === "invalid_type") {
-        return new Error('Export is missing required "items" array.');
+const MAX_VALIDATION_ISSUES = 20;
+
+/** Map Zod export-level errors to user-facing messages with item/path context. */
+function formatExportValidationError(error: z.ZodError, data: unknown): Error {
+  const lines = error.issues.map((issue) => formatValidationIssue(issue, data));
+  const uniqueLines = [...new Set(lines)];
+
+  let body = uniqueLines.slice(0, MAX_VALIDATION_ISSUES).join("\n  • ");
+  const omitted = uniqueLines.length - MAX_VALIDATION_ISSUES;
+  if (omitted > 0) {
+    body += `\n  • ... and ${omitted} more validation error(s)`;
+  }
+
+  return new Error(`Invalid Bitwarden export:\n  • ${body}`);
+}
+
+function formatValidationIssue(issue: z.ZodIssue, data: unknown): string {
+  if (issue.path[0] === "items") {
+    if (issue.path.length === 1 && issue.code === "invalid_type") {
+      return 'Export is missing required "items" array.';
+    }
+
+    const index = issue.path[1];
+    if (typeof index === "number") {
+      const field = issue.path[2];
+      if (field === "type" && issue.path.length === 3) {
+        return `${describeExportItem(data, index)} is missing required field "type".`;
+      }
+      if (field === "name" && issue.path.length === 3) {
+        return `${describeExportItem(data, index)} is missing required field "name".`;
+      }
+      if (issue.code === "custom") {
+        return issue.message;
       }
 
-      const index = issue.path[1];
-      if (typeof index === "number") {
-        const field = issue.path[2];
-        if (field === "type") {
-          return new Error(
-            `Item at index ${index} is missing required field "type".`,
-          );
-        }
-        if (field === "name") {
-          return new Error(
-            `Item at index ${index} is missing required field "name".`,
-          );
-        }
-        if (issue.code === "custom") {
-          return new Error(issue.message);
-        }
-      }
+      const fieldPath = formatJsonPath(issue.path.slice(2));
+      const location = fieldPath
+        ? `${describeExportItem(data, index)}, ${fieldPath}`
+        : describeExportItem(data, index);
+      return `${location}: ${issue.message}`;
     }
   }
 
-  const detail = error.issues.map((i) => i.message).join("; ");
-  return new Error(`Invalid Bitwarden export: ${detail}`);
+  return `${formatJsonPath(issue.path)}: ${issue.message}`;
+}
+
+function formatJsonPath(path: PropertyKey[]): string {
+  let result = "";
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      result += `[${segment}]`;
+    } else {
+      result += result ? `.${String(segment)}` : String(segment);
+    }
+  }
+  return result || "(root)";
+}
+
+function describeExportItem(data: unknown, index: number): string {
+  const prefix = `item at index ${index}`;
+  if (!data || typeof data !== "object") {
+    return prefix;
+  }
+
+  const items = (data as { items?: unknown }).items;
+  if (!Array.isArray(items) || index < 0 || index >= items.length) {
+    return prefix;
+  }
+
+  const item = items[index];
+  if (!item || typeof item !== "object") {
+    return prefix;
+  }
+
+  const record = item as Record<string, unknown>;
+  const details: string[] = [prefix];
+  if (typeof record.name === "string" && record.name.length > 0) {
+    details.push(`name "${record.name}"`);
+  }
+  if (typeof record.id === "string" && record.id.length > 0) {
+    details.push(`id ${record.id}`);
+  }
+  if (typeof record.type === "number") {
+    details.push(`type ${record.type}`);
+  }
+
+  return details.join(", ");
 }

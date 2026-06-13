@@ -18,6 +18,7 @@ import type {
   MigrationSummary,
   OnePasswordClient,
 } from "./types.js";
+import { formatCountTable } from "../utils/format-table.js";
 
 export interface MigrateOptions {
   bwDir: string;
@@ -326,7 +327,21 @@ export class Migrator {
   private printSummary(summary: MigrationSummary, dryRun: boolean): void {
     const prefix = dryRun ? "[dry-run] " : "";
     console.log(
-      `${prefix}Summary: created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failed=${summary.failed} archived=${summary.archived} archive_failures=${summary.archiveFailures} attachments=${summary.attachmentsUploaded} attachment_failures=${summary.attachmentFailures} fido_credentials_skipped=${summary.fidoCredentialsSkipped.length} regex_url_items=${summary.regexUrlItems.length}`,
+      formatCountTable(`${prefix}Summary`, [
+        { label: "Created", value: summary.created },
+        { label: "Merged", value: summary.merged },
+        { label: "Skipped", value: summary.skipped },
+        { label: "Failed", value: summary.failed },
+        { label: "Archived", value: summary.archived },
+        { label: "Archive failures", value: summary.archiveFailures },
+        { label: "Attachments", value: summary.attachmentsUploaded },
+        { label: "Attachment failures", value: summary.attachmentFailures },
+        {
+          label: "FIDO2 credentials skipped",
+          value: summary.fidoCredentialsSkipped.length,
+        },
+        { label: "Regex URL items", value: summary.regexUrlItems.length },
+      ]),
     );
 
     if (summary.fidoCredentialsSkipped.length > 0) {

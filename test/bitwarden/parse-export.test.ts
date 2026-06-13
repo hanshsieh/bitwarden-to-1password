@@ -41,7 +41,50 @@ describe("parse-export", () => {
       join(dir, "data.json"),
       JSON.stringify({ encrypted: false, items: [{ type: 1, login: {} }] }),
     );
-    assert.throws(() => parseExport(dir), /missing required field "name"/);
+    assert.throws(
+      () => parseExport(dir),
+      /item at index 0, type 1 is missing required field "name"/,
+    );
+  });
+
+  it("reports item index and field path on validation failure", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Broken Login",
+            id: "item-123",
+            login: {
+              uris: [{ match: 0 }],
+              fido2Credentials: [{ rpId: "example.com" }],
+            },
+            fields: [{ type: 0, value: "secret" }],
+          },
+        ],
+      }),
+    );
+
+    assert.throws(() => parseExport(dir), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Invalid Bitwarden export:/);
+      assert.match(
+        error.message,
+        /item at index 0, name "Broken Login", id item-123, type 1, fields\[0\]\.name/,
+      );
+      assert.match(
+        error.message,
+        /item at index 0, name "Broken Login", id item-123, type 1, login\.uris\[0\]\.uri/,
+      );
+      assert.match(
+        error.message,
+        /item at index 0, name "Broken Login", id item-123, type 1, login\.fido2Credentials\[0\]\.credentialId/,
+      );
+      return true;
+    });
   });
 
   it("preserves login fido2Credentials from export", () => {
@@ -69,6 +112,32 @@ describe("parse-export", () => {
       parsed.items[0]?.login?.fido2Credentials?.[0]?.credentialId,
       "cred-1",
     );
+  });
+
+  it("accepts custom fields and URIs with omitted linkedId and match", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-export-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Login With Omitted Field Metadata",
+            login: {
+              username: "user@example.com",
+              uris: [{ uri: "https://example.com" }],
+            },
+            fields: [{ type: 0, name: "Email", value: "user@example.com" }],
+          },
+        ],
+      }),
+    );
+
+    const parsed = parseExport(dir);
+    assert.equal(parsed.items.length, 1);
+    assert.equal(parsed.items[0]?.fields[0]?.linkedId, null);
+    assert.equal(parsed.items[0]?.login?.uris?.[0]?.match, null);
   });
 
   it("includes archived items with archivedDate preserved", () => {
