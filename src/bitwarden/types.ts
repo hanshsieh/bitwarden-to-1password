@@ -1,6 +1,11 @@
 /** Bitwarden cipher type identifiers (1–5 supported by this tool). */
 export type BitwardenCipherType = 1 | 2 | 3 | 4 | 5;
 
+export type {
+  BitwardenExportInput,
+  BitwardenItemInput,
+} from "./export-schemas.js";
+
 export interface BitwardenCustomField {
   name: string;
   value: string | null;

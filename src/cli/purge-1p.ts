@@ -1,6 +1,6 @@
-import { createClient } from "../onepassword/client.js";
-import { purgeVault } from "../onepassword/purge.js";
-import { resolveVault } from "../onepassword/vault-resolver.js";
+import { OnePasswordClientFactory } from "../onepassword/client.js";
+import { VaultPurger } from "../onepassword/vault-purger.js";
+import { VaultResolver } from "../onepassword/vault-resolver.js";
 
 export interface PurgeCommandOptions {
   yes: boolean;
@@ -9,29 +9,51 @@ export interface PurgeCommandOptions {
   vault?: string;
 }
 
-/** Run the purge-1p subcommand. */
-export async function runPurge(options: PurgeCommandOptions): Promise<number> {
-  const client = await createClient();
-  const vault = await resolveVault(client, options.vault);
+/**
+ * CLI handler for the `purge-1p` subcommand.
+ *
+ * Authenticates with 1Password, resolves the target vault, parses optional
+ * date filters, and delegates to {@link VaultPurger}.
+ */
+export class PurgeCommand {
+  constructor(
+    private readonly clientFactory = new OnePasswordClientFactory(),
+  ) {}
 
-  console.log(`Target vault: ${vault.title} (${vault.id})`);
+  /** @returns Process exit code (always 0 unless an error is thrown). */
+  async run(options: PurgeCommandOptions): Promise<number> {
+    const client = await this.clientFactory.create();
+    const vault = await new VaultResolver(client).resolve(options.vault);
 
-  let updatedOnOrAfter: Date | undefined;
-  if (options.updatedOnOrAfter) {
-    updatedOnOrAfter = new Date(options.updatedOnOrAfter);
-    if (Number.isNaN(updatedOnOrAfter.getTime())) {
-      throw new Error(
-        `Invalid --updated-on-or-after value: ${options.updatedOnOrAfter}`,
-      );
-    }
+    console.log(`Target vault: ${vault.title} (${vault.id})`);
+
+    const updatedOnOrAfter = this.parseUpdatedOnOrAfter(
+      options.updatedOnOrAfter,
+    );
+
+    await new VaultPurger(client).purge({
+      vaultId: vault.id,
+      updatedOnOrAfter,
+      dryRun: options.dryRun,
+      yes: options.yes,
+    });
+
+    return 0;
   }
 
-  await purgeVault(client, {
-    vaultId: vault.id,
-    updatedOnOrAfter,
-    dryRun: options.dryRun,
-    yes: options.yes,
-  });
+  /** Parse ISO 8601 cutoff for `--updated-on-or-after`. */
+  private parseUpdatedOnOrAfter(value?: string): Date | undefined {
+    if (!value) return undefined;
 
-  return 0;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid --updated-on-or-after value: ${value}`);
+    }
+    return date;
+  }
+}
+
+/** Run the purge-1p subcommand using a default command instance. */
+export async function runPurge(options: PurgeCommandOptions): Promise<number> {
+  return new PurgeCommand().run(options);
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ItemCategory, ItemState } from "@1password/sdk";
-import { purgeVault } from "../../src/onepassword/purge.js";
+import { purgeVault } from "../../src/onepassword/vault-purger.js";
 import { createMockClient, itemToOverview, makeLoginItem } from "../helpers/mock-client.js";
 
 describe("purge", () => {

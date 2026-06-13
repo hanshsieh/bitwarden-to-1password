@@ -5,7 +5,7 @@ import {
   attachmentSize,
   readAttachmentFile,
   scanAttachments,
-} from "../../src/bitwarden/attachments.js";
+} from "../../src/bitwarden/attachment-scanner.js";
 
 const FIXTURES = join(
   import.meta.dirname,

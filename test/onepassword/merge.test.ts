@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { ItemCategory } from "@1password/sdk";
-import { parseExport } from "../../src/bitwarden/parse-export.js";
+import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
   buildMatchIndex,
   buildMatchKey,
   decideMergeAction,
   overlayItem,
-} from "../../src/onepassword/merge.js";
+} from "../../src/onepassword/merge-engine.js";
 import { mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 

@@ -1,18 +1,14 @@
-import { readAttachmentFile, scanAttachments } from "../bitwarden/attachments.js";
-import { parseExport } from "../bitwarden/parse-export.js";
+import type { Item } from "@1password/sdk";
+import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
+import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
 import {
   ATTACHMENTS_SECTION_ID,
-  mapItem,
+  OnePasswordItemMapper,
 } from "./item-mapper.js";
-import {
-  buildMatchIndex,
-  decideMergeAction,
-  existingAttachmentFieldIds,
-  findMatches,
-  overlayItem,
-} from "./merge.js";
+import { MergeEngine } from "./merge-engine.js";
 import type {
+  MappedItem,
   MergeStrategy,
   MigrationSummary,
   OnePasswordClient,
@@ -25,35 +21,81 @@ export interface MigrateOptions {
   dryRun: boolean;
 }
 
-/** Run the full Bitwarden → 1Password migration. */
-export async function migrate(
-  client: OnePasswordClient,
-  options: MigrateOptions,
-): Promise<MigrationSummary> {
-  const exportData = parseExport(options.bwDir);
-  const matchIndex = await buildMatchIndex(client, options.vaultId);
+/**
+ * Orchestrates a full Bitwarden export → 1Password vault migration.
+ *
+ * Composes an export parser, item mapper, attachment scanner, and merge engine.
+ * Each export item is mapped, checked for duplicates, then created or merged.
+ * Attachments are uploaded after the parent item exists in 1Password.
+ */
+export class Migrator {
+  private readonly exportParser: BitwardenExportParser;
+  private readonly itemMapper: OnePasswordItemMapper;
+  private readonly mergeEngine: MergeEngine;
 
-  const summary: MigrationSummary = {
-    created: 0,
-    merged: 0,
-    skipped: 0,
-    failed: 0,
-    attachmentsUploaded: 0,
-    attachmentFailures: 0,
-    aborted: false,
-  };
+  constructor(
+    private readonly client: OnePasswordClient,
+    deps?: {
+      exportParser?: BitwardenExportParser;
+      itemMapper?: OnePasswordItemMapper;
+    },
+  ) {
+    this.exportParser = deps?.exportParser ?? new BitwardenExportParser();
+    this.itemMapper = deps?.itemMapper ?? new OnePasswordItemMapper();
+    this.mergeEngine = new MergeEngine(client, this.itemMapper);
+  }
 
-  console.log(
-    `Migrating ${exportData.items.length} item(s) (skipped ${exportData.skippedDeleted} deleted, ${exportData.skippedUnsupported} unsupported).`,
-  );
+  /**
+   * Run migration for all items in the export directory.
+   *
+   * @returns Summary counters and whether the run was aborted (abort strategy).
+   */
+  async migrate(options: MigrateOptions): Promise<MigrationSummary> {
+    const exportData = this.exportParser.parse(options.bwDir);
+    const attachmentScanner = new BitwardenAttachmentScanner(options.bwDir);
+    const matchIndex = await this.mergeEngine.buildIndex(options.vaultId);
 
-  for (const item of exportData.items) {
-    if (summary.aborted) break;
+    const summary = this.emptySummary();
 
-    const attachments = scanAttachments(options.bwDir, item.id);
-    const mapped = mapItem(item, exportData, options.vaultId, attachments);
-    const matchIds = findMatches(matchIndex, item);
-    const decision = decideMergeAction(options.mergeStrategy, matchIds);
+    console.log(
+      `Migrating ${exportData.items.length} item(s) (skipped ${exportData.skippedDeleted} deleted, ${exportData.skippedUnsupported} unsupported).`,
+    );
+
+    for (const item of exportData.items) {
+      if (summary.aborted) break;
+
+      await this.processItem(
+        item,
+        exportData,
+        options,
+        attachmentScanner,
+        matchIndex,
+        summary,
+      );
+    }
+
+    this.printSummary(summary, options.dryRun);
+    return summary;
+  }
+
+  /** Process one export cipher: decide action, create/merge/skip, upload files. */
+  private async processItem(
+    item: ParsedBitwardenExport["items"][number],
+    exportData: ParsedBitwardenExport,
+    options: MigrateOptions,
+    attachmentScanner: BitwardenAttachmentScanner,
+    matchIndex: Awaited<ReturnType<MergeEngine["buildIndex"]>>,
+    summary: MigrationSummary,
+  ): Promise<void> {
+    const attachments = attachmentScanner.scanForItem(item.id);
+    const mapped = this.itemMapper.map(
+      item,
+      exportData,
+      options.vaultId,
+      attachments,
+    );
+    const matchIds = this.mergeEngine.findMatches(matchIndex, item);
+    const decision = MergeEngine.decide(options.mergeStrategy, matchIds);
 
     if (decision.warning) {
       console.warn(`"${item.name}": ${decision.warning}`);
@@ -62,60 +104,33 @@ export async function migrate(
     if (decision.action === "abort") {
       console.error(`Aborting migration: duplicate match for "${item.name}".`);
       summary.aborted = true;
-      break;
+      return;
     }
 
     if (decision.action === "skip") {
       console.log(`skip: ${item.name}`);
       summary.skipped++;
-      continue;
+      return;
     }
 
     if (options.dryRun) {
-      console.log(`${decision.action}: ${item.name}`);
+      this.logDryRunAction(decision.action, item.name, attachments);
       if (decision.action === "create") summary.created++;
       if (decision.action === "merge") summary.merged++;
-      if (attachments.length > 0) {
-        console.log(`  attachments: ${attachments.map((a) => a.filename).join(", ")}`);
-      }
-      continue;
+      return;
     }
 
     try {
       if (decision.action === "create") {
-        const created = await client.items.create(mapped.params);
-        summary.created++;
-        console.log(`created: ${item.name} (${created.id})`);
-        await uploadAttachments(
-          client,
-          created,
-          mapped,
-          options.bwDir,
-          summary,
-        );
+        await this.createItem(item.name, mapped, attachmentScanner, summary);
       } else if (decision.action === "merge" && decision.targetItemId) {
-        const existing = await client.items.get(
+        await this.mergeItem(
+          item.name,
           options.vaultId,
           decision.targetItemId,
-        );
-        const updated = overlayItem(
-          existing,
-          mapped.params.fields ?? [],
-          mapped.params.notes,
-          mapped.params.tags,
-          mapped.params.websites,
-          mapped.params.sections,
-        );
-        const saved = await client.items.put(updated);
-        summary.merged++;
-        console.log(`merged: ${item.name} (${saved.id})`);
-        await uploadAttachments(
-          client,
-          saved,
           mapped,
-          options.bwDir,
+          attachmentScanner,
           summary,
-          existingAttachmentFieldIds(existing),
         );
       }
     } catch (error) {
@@ -125,57 +140,132 @@ export async function migrate(
     }
   }
 
-  printSummary(summary, options.dryRun);
-  return summary;
-}
+  private async createItem(
+    itemName: string,
+    mapped: MappedItem,
+    attachmentScanner: BitwardenAttachmentScanner,
+    summary: MigrationSummary,
+  ): Promise<void> {
+    const created = await this.client.items.create(mapped.params);
+    summary.created++;
+    console.log(`created: ${itemName} (${created.id})`);
+    await this.uploadAttachments(
+      created,
+      mapped,
+      attachmentScanner,
+      summary,
+    );
+  }
 
-async function uploadAttachments(
-  client: OnePasswordClient,
-  item: Awaited<ReturnType<OnePasswordClient["items"]["create"]>>,
-  mapped: ReturnType<typeof mapItem>,
-  _bwDir: string,
-  summary: MigrationSummary,
-  skipFieldIds: Set<string> = new Set(),
-): Promise<typeof item> {
-  let current = item;
+  private async mergeItem(
+    itemName: string,
+    vaultId: string,
+    targetItemId: string,
+    mapped: MappedItem,
+    attachmentScanner: BitwardenAttachmentScanner,
+    summary: MigrationSummary,
+  ): Promise<void> {
+    const existing = await this.client.items.get(vaultId, targetItemId);
+    const updated = MergeEngine.overlay(
+      existing,
+      mapped.params.fields ?? [],
+      mapped.params.notes,
+      mapped.params.tags,
+      mapped.params.websites,
+      mapped.params.sections,
+    );
+    const saved = await this.client.items.put(updated);
+    summary.merged++;
+    console.log(`merged: ${itemName} (${saved.id})`);
+    await this.uploadAttachments(
+      saved,
+      mapped,
+      attachmentScanner,
+      summary,
+      MergeEngine.existingAttachmentFieldIds(existing),
+    );
+  }
 
-  for (const attachment of mapped.attachments) {
-    const fieldId =
-      mapped.attachmentFieldIds.get(attachment.filePath) ??
-      attachment.filename;
+  /** Attach export files to a 1Password item, skipping field IDs already present. */
+  private async uploadAttachments(
+    item: Item,
+    mapped: MappedItem,
+    attachmentScanner: BitwardenAttachmentScanner,
+    summary: MigrationSummary,
+    skipFieldIds: Set<string> = new Set(),
+  ): Promise<Item> {
+    let current = item;
 
-    if (skipFieldIds.has(fieldId)) {
-      continue;
+    for (const attachment of mapped.attachments) {
+      const fieldId =
+        mapped.attachmentFieldIds.get(attachment.filePath) ??
+        attachment.filename;
+
+      if (skipFieldIds.has(fieldId)) {
+        continue;
+      }
+
+      try {
+        const content = attachmentScanner.readFile(attachment);
+        current = await this.client.items.files.attach(current, {
+          name: attachment.filename,
+          content,
+          sectionId: ATTACHMENTS_SECTION_ID,
+          fieldId,
+        });
+        summary.attachmentsUploaded++;
+      } catch (error) {
+        summary.attachmentFailures++;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `attachment failed: ${attachment.filename} on "${item.title}" — ${message}`,
+        );
+      }
     }
 
-    try {
-      const content = readAttachmentFile(attachment.filePath);
-      current = await client.items.files.attach(current, {
-        name: attachment.filename,
-        content,
-        sectionId: ATTACHMENTS_SECTION_ID,
-        fieldId,
-      });
-      summary.attachmentsUploaded++;
-    } catch (error) {
-      summary.attachmentFailures++;
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `attachment failed: ${attachment.filename} on "${item.title}" — ${message}`,
+    return current;
+  }
+
+  private logDryRunAction(
+    action: "create" | "merge",
+    itemName: string,
+    attachments: MappedItem["attachments"],
+  ): void {
+    console.log(`${action}: ${itemName}`);
+    if (attachments.length > 0) {
+      console.log(
+        `  attachments: ${attachments.map((a) => a.filename).join(", ")}`,
       );
     }
   }
 
-  return current;
+  private emptySummary(): MigrationSummary {
+    return {
+      created: 0,
+      merged: 0,
+      skipped: 0,
+      failed: 0,
+      attachmentsUploaded: 0,
+      attachmentFailures: 0,
+      aborted: false,
+    };
+  }
+
+  private printSummary(summary: MigrationSummary, dryRun: boolean): void {
+    const prefix = dryRun ? "[dry-run] " : "";
+    console.log(
+      `${prefix}Summary: created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failed=${summary.failed} attachments=${summary.attachmentsUploaded} attachment_failures=${summary.attachmentFailures}`,
+    );
+  }
 }
 
-function printSummary(summary: MigrationSummary, dryRun: boolean): void {
-  const prefix = dryRun ? "[dry-run] " : "";
-  console.log(
-    `${prefix}Summary: created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failed=${summary.failed} attachments=${summary.attachmentsUploaded} attachment_failures=${summary.attachmentFailures}`,
-  );
+/** Convenience wrapper using a default migrator instance. */
+export async function migrate(
+  client: OnePasswordClient,
+  options: MigrateOptions,
+): Promise<MigrationSummary> {
+  return new Migrator(client).migrate(options);
 }
 
-/** Export parse helper for tests. */
-export { parseExport };
+export { BitwardenExportParser, parseExport } from "../bitwarden/export-parser.js";
 export type { ParsedBitwardenExport };

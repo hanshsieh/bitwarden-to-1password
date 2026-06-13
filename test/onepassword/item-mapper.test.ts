@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { parseExport } from "../../src/bitwarden/parse-export.js";
+import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
   ATTACHMENTS_SECTION_ID,
   CUSTOM_FIELDS_SECTION_ID,

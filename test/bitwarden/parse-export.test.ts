@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
-import { parseExport } from "../../src/bitwarden/parse-export.js";
+import { parseExport } from "../../src/bitwarden/export-parser.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports");
 

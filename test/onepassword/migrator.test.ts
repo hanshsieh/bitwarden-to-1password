@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { migrate } from "../../src/onepassword/migrator.js";
-import { parseExport } from "../../src/bitwarden/parse-export.js";
+import { parseExport } from "../../src/bitwarden/export-parser.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
