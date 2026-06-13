@@ -19,6 +19,8 @@ The extracted directory should contain:
 - A JSON file with your vault items (for example, `data.json`)
 - Attachment files organized alongside the export
 
+See [docs/bitwarden-export-format.md](docs/bitwarden-export-format.md) for the export JSON schema and ZIP layout.
+
 > **Security note:** The ZIP export is **unencrypted**. Handle and delete the export files carefully after migration.
 
 ### 2. Create a 1Password service account
@@ -133,6 +135,10 @@ npm start -- purge-1p \
   --updated-on-or-after 2024-06-01T00:00:00Z \
   --yes
 ```
+
+## Documentation
+
+- [Bitwarden export format](docs/bitwarden-export-format.md) — JSON schema, item types, and attachment layout
 
 ## Development
 
