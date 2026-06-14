@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isAsciiOnlyTag,
   mapBitwardenLabelsForSdk,
+  tagsNeedSdkStripping,
 } from "../../src/onepassword/tags.js";
 
 describe("tags", () => {
@@ -19,5 +20,10 @@ describe("tags", () => {
     ]);
 
     assert.deepEqual(tags, ["Work", "Team"]);
+  });
+
+  it("detects tags that need SDK stripping", () => {
+    assert.equal(tagsNeedSdkStripping(["Work", "Team"]), false);
+    assert.equal(tagsNeedSdkStripping(["Work", "雲端空間"]), true);
   });
 });

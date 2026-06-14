@@ -8,7 +8,10 @@ import {
   hasRegexLoginUri,
   isArchivedItem,
 } from "../bitwarden/types.js";
-import { hasNonAsciiBitwardenLabels } from "./tags.js";
+import {
+  hasNonAsciiBitwardenLabels,
+  tagsNeedSdkStripping,
+} from "./tags.js";
 import {
   ATTACHMENTS_SECTION_ID,
   OnePasswordItemMapper,
@@ -88,10 +91,6 @@ export class Migrator {
     summary.linkedFieldsSkipped = this.collectLinkedFieldSkippedItems(
       exportData.items,
     );
-    summary.nonAsciiTagsSkipped = this.collectNonAsciiTagItems(
-      exportData.items,
-      exportData,
-    );
     summary.regexUrlItems = this.collectRegexUrlItems(exportData.items);
     this.printSummary(summary, options.dryRun);
     return summary;
@@ -134,7 +133,10 @@ export class Migrator {
 
     if (options.dryRun) {
       this.logDryRunAction(decision.action, item, attachments);
-      if (decision.action === "create") summary.created++;
+      if (decision.action === "create") {
+        summary.created++;
+        this.recordNonAsciiTagsSkippedForExport(item, exportData, summary);
+      }
       if (decision.action === "merge") summary.merged++;
       return;
     }
@@ -143,6 +145,7 @@ export class Migrator {
       if (decision.action === "create") {
         await this.createItem(
           item,
+          exportData,
           mapped,
           options.vaultId,
           attachmentScanner,
@@ -167,6 +170,7 @@ export class Migrator {
 
   private async createItem(
     sourceItem: ParsedBitwardenExport["items"][number],
+    exportData: ParsedBitwardenExport,
     mapped: MappedItem,
     vaultId: string,
     attachmentScanner: BitwardenAttachmentScanner,
@@ -174,6 +178,7 @@ export class Migrator {
   ): Promise<void> {
     const created = await this.client.items.create(mapped.params);
     summary.created++;
+    this.recordNonAsciiTagsSkippedForExport(sourceItem, exportData, summary);
     console.log(`created: ${sourceItem.name} (${created.id})`);
     const withAttachments = await this.uploadAttachments(
       created,
@@ -209,6 +214,9 @@ export class Migrator {
 
     let current = existing;
     if (!MergeEngine.itemsEqualForMerge(existing, merged)) {
+      if (tagsNeedSdkStripping(merged.tags)) {
+        this.recordNonAsciiTagsSkipped(summary, sourceItem.name);
+      }
       MergeEngine.stripNonAsciiTags(merged);
       current = await this.client.items.put(merged);
       summary.merged++;
@@ -326,13 +334,23 @@ export class Migrator {
     return items.filter(hasLinkedCustomFields).map((item) => item.name);
   }
 
-  private collectNonAsciiTagItems(
-    items: ParsedBitwardenExport["items"],
+  private recordNonAsciiTagsSkippedForExport(
+    item: ParsedBitwardenExport["items"][number],
     exportData: ParsedBitwardenExport,
-  ): string[] {
-    return items
-      .filter((item) => hasNonAsciiBitwardenLabels(item, exportData))
-      .map((item) => item.name);
+    summary: MigrationSummary,
+  ): void {
+    if (hasNonAsciiBitwardenLabels(item, exportData)) {
+      this.recordNonAsciiTagsSkipped(summary, item.name);
+    }
+  }
+
+  private recordNonAsciiTagsSkipped(
+    summary: MigrationSummary,
+    itemName: string,
+  ): void {
+    if (!summary.nonAsciiTagsSkipped.includes(itemName)) {
+      summary.nonAsciiTagsSkipped.push(itemName);
+    }
   }
 
   private collectRegexUrlItems(
@@ -409,7 +427,7 @@ export class Migrator {
 
     if (summary.nonAsciiTagsSkipped.length > 0) {
       console.log(
-        `${prefix}Non-ASCII folder/collection labels not migrated (SDK tags must be ASCII):`,
+        `${prefix}Non-ASCII tags omitted (SDK tags must be ASCII):`,
       );
       for (const name of summary.nonAsciiTagsSkipped) {
         console.log(`  - ${name}`);

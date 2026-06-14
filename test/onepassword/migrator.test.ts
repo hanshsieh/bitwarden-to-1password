@@ -162,6 +162,7 @@ describe("migrator", () => {
     assert.equal(summary.failed, 0);
     assert.equal(state.putCalls.length, 0);
     assert.deepEqual(state.items.get("existing-1")?.tags, ["雲端空間"]);
+    assert.deepEqual(summary.nonAsciiTagsSkipped, []);
   });
 
   it("strips non-ASCII tags when merge update is required", async () => {
@@ -218,6 +219,7 @@ describe("migrator", () => {
     assert.equal(summary.failed, 0);
     assert.equal(state.putCalls.length, 1);
     assert.deepEqual(state.items.get("existing-1")?.tags, ["Work"]);
+    assert.deepEqual(summary.nonAsciiTagsSkipped, ["Needs Tag"]);
   });
 
   it("reports items with FIDO2 credentials in summary", async () => {

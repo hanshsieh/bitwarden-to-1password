@@ -50,6 +50,11 @@ export function filterSdkSafeTags(tags: readonly string[]): string[] {
   return tags.filter((tag) => isAsciiOnlyTag(tag));
 }
 
+/** True when any tag would be dropped before an SDK write. */
+export function tagsNeedSdkStripping(tags: readonly string[]): boolean {
+  return tags.some((tag) => !isAsciiOnlyTag(tag));
+}
+
 /** True when an item has folder/collection labels that cannot be sent as SDK tags. */
 export function hasNonAsciiBitwardenLabels(
   item: ParsedBitwardenItem,

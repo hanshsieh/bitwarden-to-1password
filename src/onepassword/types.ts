@@ -69,7 +69,7 @@ export interface MigrationSummary {
   fidoCredentialsSkipped: string[];
   /** Item names with linked custom fields omitted (1Password has no equivalent). */
   linkedFieldsSkipped: string[];
-  /** Item names whose non-ASCII folder/collection labels were omitted. */
+  /** Item names where non-ASCII tags were omitted when writing to 1Password. */
   nonAsciiTagsSkipped: string[];
   /** Login item names with regex URIs mapped to Never autofill for manual review. */
   regexUrlItems: string[];
