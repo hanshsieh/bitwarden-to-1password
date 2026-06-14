@@ -4,7 +4,7 @@ Command-line tool to migrate a Bitwarden vault export into 1Password.
 
 1Password can import Bitwarden data natively, but that built-in import does **not** include **attachments** or **custom fields**. This tool fills that gap by reading a full Bitwarden export and writing items into 1Password via the [1Password SDK](https://developer.1password.com/docs/sdks/).
 
-## Prerequisites
+## Setup
 
 ### 1. Export your Bitwarden vault as a ZIP file
 
@@ -23,27 +23,23 @@ See [docs/bitwarden-export-format.md](docs/bitwarden-export-format.md) for the e
 
 > **Security note:** The ZIP export is **unencrypted**. Handle and delete the export files carefully after migration.
 
-### 2. Create a 1Password service account
+### 2. Create a 1Password vault for migration
 
-This tool uses the 1Password SDK with a [service account](https://developer.1password.com/docs/service-accounts/) so it can create items programmatically.
+This tool uses the 1Password SDK with a [service account](https://developer.1password.com/docs/service-accounts/) so it can create items programmatically. Service accounts **cannot** access 1Password's built-in [Personal](https://support.1password.com/1password-glossary/#personal-vault), [Private](https://support.1password.com/1password-glossary/#private-vault), default [Shared](https://support.1password.com/1password-glossary/#shared-vault), or [Employee](https://support.1password.com/1password-glossary/#employee-vault) vaults. See the [1Password SDK docs](https://www.1password.dev/sdks) for details.
 
-1. In 1Password, create a service account with access to the vault where migrated items should be stored.
-2. Copy the service account token.
-3. Copy `.env.example` to `.env` and set your token:
+Because of that limitation, create a **dedicated vault** for the migration (for example, `Bitwarden Migration`) and import your Bitwarden items there first. In the 1Password desktop or web app, create a new vault and use it as the migration target.
 
-   ```bash
-   cp .env.example .env
-   ```
+> **After migration:** Use the 1Password desktop app to batch move items into your target vault (for example, Personal) once import is complete.
 
-   ```env
-   OP_SERVICE_ACCOUNT_TOKEN=<your-service-account-token>
-   ```
+### 3. Create a 1Password service account
+
+Follow the steps in [Get started with 1Password Service Accounts](https://www.1password.dev/service-accounts/get-started) to create a service account. When configuring vault access, grant the service account **read and write** permissions to the migration vault you created above.
 
 See the [1Password SDK authentication docs](https://developer.1password.com/docs/sdks/concepts#authentication) for details.
 
-## Setup
+### 4. Install this tool and configure your token
 
-Clone the repository, configure your service account token, and install dependencies:
+Clone the repository, set your service account token, and install dependencies:
 
 ```bash
 git clone https://github.com/<your-org>/bitwarden-to-1password.git
@@ -51,6 +47,12 @@ cd bitwarden-to-1password
 cp .env.example .env
 npm install
 npm run build
+```
+
+Open `.env` and set your service account token:
+
+```env
+OP_SERVICE_ACCOUNT_TOKEN=<your-service-account-token>
 ```
 
 `npm install` pulls in everything this tool needs (including the 1Password SDK and `.env` loading). No separate global install is required.
@@ -66,15 +68,15 @@ Import items from an extracted Bitwarden export into a 1Password vault.
 ```bash
 npm start -- migrate \
   --bw-dir /path/to/extracted-bitwarden-export \
-  --vault "Personal"
+  --vault "Bitwarden Migration"
 ```
 
 #### Vault selection
 
-`--vault` is required. It targets a vault by ID or title (case-insensitive substring match):
+`--vault` is required. It targets a vault by ID or title (case-insensitive substring match). Use the migration vault you created for your service account (see [Create a 1Password vault for migration](#2-create-a-1password-vault-for-migration)):
 
 ```bash
-npm start -- migrate --bw-dir /path/to/export --vault "Personal"
+npm start -- migrate --bw-dir /path/to/export --vault "Bitwarden Migration"
 ```
 
 If the hint matches multiple vaults, the command fails with an error listing the matches. Use `list-vaults` to see accessible vault IDs and titles:
@@ -96,7 +98,7 @@ When an item in the export may already exist in 1Password, use `--merge-strategy
 ```bash
 npm start -- migrate \
   --bw-dir /path/to/extracted-bitwarden-export \
-  --vault "Personal" \
+  --vault "Bitwarden Migration" \
   --merge-strategy merge
 ```
 
@@ -107,7 +109,7 @@ Preview what would be imported without writing to 1Password:
 ```bash
 npm start -- migrate \
   --bw-dir /path/to/extracted-bitwarden-export \
-  --vault "Personal" \
+  --vault "Bitwarden Migration" \
   --dry-run
 ```
 
