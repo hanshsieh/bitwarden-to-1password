@@ -219,8 +219,6 @@ export class Migrator {
     const filesMatch = MergeEngine.filesMatchExpected(
       existing.files,
       expectedFiles,
-      existing.sections,
-      desired.sections,
     );
     const needsUpdate = !fieldContentMatches || !filesMatch;
 
@@ -235,7 +233,7 @@ export class Migrator {
       current = await this.client.items.put(toWrite);
     }
 
-    if (needsUpdate) {
+    if (!filesMatch) {
       current = await this.syncAttachments(
         current,
         mapped,

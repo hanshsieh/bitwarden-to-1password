@@ -10,6 +10,7 @@ import {
   buildMatchKey,
   decideMergeAction,
   expectedFilesFromMapped,
+  itemContentMatchesDesired,
   itemsMatchDesired,
   stripNonAsciiTags,
 } from "../../src/onepassword/merge-engine.js";
@@ -131,6 +132,42 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(synced, desired), false);
   });
 
+  it("itemContentMatchesDesired compares unreferenced sections by title", () => {
+    const existing = makeLoginItem("existing-1", "Login", "user@example.com");
+    const desired = buildDesiredItem(existing, {
+      category: ItemCategory.Login,
+      vaultId: "vault-1",
+      title: "Login",
+      sections: [
+        {
+          id: ATTACHMENTS_SECTION_ID,
+          title: ATTACHMENTS_SECTION_TITLE,
+        },
+      ],
+    });
+
+    existing.fields = desired.fields;
+    existing.websites = desired.websites;
+    existing.notes = desired.notes;
+    existing.tags = desired.tags;
+    existing.sections = [
+      {
+        id: ATTACHMENTS_SECTION_ID,
+        title: "Wrong Title",
+      },
+    ];
+
+    assert.equal(itemContentMatchesDesired(existing, desired), false);
+
+    existing.sections = [
+      {
+        id: "server_assigned",
+        title: ATTACHMENTS_SECTION_TITLE,
+      },
+    ];
+    assert.equal(itemContentMatchesDesired(existing, desired), true);
+  });
+
   it("itemsMatchDesired treats desired tags as a subset of actual tags", () => {
     const existing = makeLoginItem("a", "Login", "user@example.com");
     const desired = buildDesiredItem(existing, {
@@ -154,7 +191,7 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(existing, desired), true);
   });
 
-  it("itemsMatchDesired compares attachment field IDs and section titles", () => {
+  it("itemsMatchDesired compares attachment field IDs and section IDs", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
@@ -189,31 +226,16 @@ describe("merge engine", () => {
     existing.files = [];
     assert.equal(itemsMatchDesired(existing, desired), false);
 
-    existing.sections = [
-      {
-        id: "other_section",
-        title: ATTACHMENTS_SECTION_TITLE,
-      },
-    ];
-    existing.files = [
-      {
-        attributes: { id: "file-1", name: "readme.txt", size: 5 },
-        sectionId: "other_section",
-        fieldId: "attach_abc",
-      },
-    ];
+    existing.files = structuredClone(desired.files);
     assert.equal(itemsMatchDesired(existing, desired), true);
 
-    existing.sections[0] = {
-      id: "other_section",
-      title: "Other",
+    existing.files[0] = {
+      ...existing.files[0]!,
+      sectionId: "other_section",
     };
     assert.equal(itemsMatchDesired(existing, desired), false);
 
-    existing.sections[0] = {
-      id: "other_section",
-      title: ATTACHMENTS_SECTION_TITLE,
-    };
+    existing.files[0] = structuredClone(desired.files[0]!);
     existing.files.push({
       attributes: { id: "file-2", name: "extra.txt", size: 1 },
       sectionId: ATTACHMENTS_SECTION_ID,
