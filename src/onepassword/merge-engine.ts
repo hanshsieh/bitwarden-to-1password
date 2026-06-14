@@ -195,6 +195,20 @@ export class MergeEngine {
   }
 
   /**
+   * True when field content matches the desired export state (files excluded).
+   */
+  static itemContentMatchesDesired(actual: Item, desired: Item): boolean {
+    return (
+      actual.title === desired.title &&
+      actual.category === desired.category &&
+      (actual.notes ?? "") === (desired.notes ?? "") &&
+      MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
+      MergeEngine.websitesEqual(actual.websites, desired.websites) &&
+      MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
+    );
+  }
+
+  /**
    * True when an existing vault item already matches the desired export state.
    * Fields are compared strictly (order, ids, types, values). Field sectionId
    * is ignored because 1Password may assign sections on save. Tags match when
@@ -204,12 +218,7 @@ export class MergeEngine {
    */
   static itemsMatchDesired(actual: Item, desired: Item): boolean {
     return (
-      actual.title === desired.title &&
-      actual.category === desired.category &&
-      (actual.notes ?? "") === (desired.notes ?? "") &&
-      MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
-      MergeEngine.websitesEqual(actual.websites, desired.websites) &&
-      MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags) &&
+      MergeEngine.itemContentMatchesDesired(actual, desired) &&
       MergeEngine.filesEqual(actual.files, desired.files)
     );
   }
@@ -299,6 +308,11 @@ export class MergeEngine {
     return serialize(a) === serialize(b);
   }
 
+  /** Compare actual item files to the expected export attachment field IDs. */
+  static filesMatchExpected(actual: ItemFile[], expected: ItemFile[]): boolean {
+    return MergeEngine.filesEqual(actual, expected);
+  }
+
   private static filesEqual(a: ItemFile[], b: ItemFile[]): boolean {
     if (a.length !== b.length) return false;
 
@@ -353,6 +367,17 @@ export function expectedFilesFromMapped(mapped: MappedItem): ItemFile[] {
 
 export function itemsMatchDesired(actual: Item, desired: Item): boolean {
   return MergeEngine.itemsMatchDesired(actual, desired);
+}
+
+export function itemContentMatchesDesired(actual: Item, desired: Item): boolean {
+  return MergeEngine.itemContentMatchesDesired(actual, desired);
+}
+
+export function filesMatchExpected(
+  actual: ItemFile[],
+  expected: ItemFile[],
+): boolean {
+  return MergeEngine.filesMatchExpected(actual, expected);
 }
 
 export function applyDesiredContent(existing: Item, desired: Item): Item {

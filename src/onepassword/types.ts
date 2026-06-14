@@ -37,6 +37,7 @@ export interface OnePasswordClient {
     archive(vaultId: string, itemId: string): Promise<void>;
     files: {
       attach(item: Item, fileParams: FileCreateParams): Promise<Item>;
+      delete(item: Item, sectionId: string, fieldId: string): Promise<Item>;
     };
   };
 }

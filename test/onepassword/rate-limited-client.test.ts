@@ -40,6 +40,9 @@ describe("rate-limited-client", () => {
           attach: async () => {
             throw new Error("not used");
           },
+          delete: async () => {
+            throw new Error("not used");
+          },
         },
       },
     };

@@ -1,4 +1,4 @@
-import type { Item } from "@1password/sdk";
+import type { Item, ItemFile } from "@1password/sdk";
 import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
 import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
@@ -212,7 +212,16 @@ export class Migrator {
     );
 
     let current = existing;
-    if (!MergeEngine.itemsMatchDesired(existing, desired)) {
+    const fieldContentMatches = MergeEngine.itemContentMatchesDesired(
+      existing,
+      desired,
+    );
+    const filesMatch = MergeEngine.filesMatchExpected(
+      existing.files,
+      expectedFiles,
+    );
+
+    if (!fieldContentMatches) {
       if (hasNonAsciiBitwardenLabels(sourceItem, exportData)) {
         this.recordNonAsciiTagsSkipped(summary, sourceItem.name);
       }
@@ -221,6 +230,19 @@ export class Migrator {
         desired,
       );
       current = await this.client.items.put(toWrite);
+    }
+
+    if (!filesMatch) {
+      current = await this.syncAttachments(
+        current,
+        mapped,
+        expectedFiles,
+        attachmentScanner,
+        summary,
+      );
+    }
+
+    if (!fieldContentMatches || !filesMatch) {
       summary.updated++;
       console.log(`updated: ${sourceItem.name} (${current.id})`);
     } else {
@@ -228,15 +250,9 @@ export class Migrator {
       console.log(`unchanged: ${sourceItem.name} (${existing.id})`);
     }
 
-    const withAttachments = await this.uploadAttachments(
-      current,
-      mapped,
-      attachmentScanner,
-      summary,
-    );
     await this.applyArchivedState(
       vaultId,
-      withAttachments.id,
+      current.id,
       sourceItem,
       summary,
     );
@@ -269,7 +285,74 @@ export class Migrator {
     }
   }
 
-  /** Attach export files to a 1Password item, skipping field IDs already present. */
+  /**
+   * Align item attachments with the export: remove files whose field IDs are
+   * not in the preferred set, then attach any preferred files that are missing.
+   */
+  private async syncAttachments(
+    item: Item,
+    mapped: MappedItem,
+    expectedFiles: ItemFile[],
+    attachmentScanner: BitwardenAttachmentScanner,
+    summary: MigrationSummary,
+  ): Promise<Item> {
+    let current = item;
+    const preferredFieldIds = new Set(expectedFiles.map((file) => file.fieldId));
+    let presentFieldIds = MergeEngine.existingAttachmentFieldIds(current);
+
+    for (const file of [...current.files]) {
+      if (preferredFieldIds.has(file.fieldId)) {
+        continue;
+      }
+
+      try {
+        current = await this.client.items.files.delete(
+          current,
+          file.sectionId,
+          file.fieldId,
+        );
+        presentFieldIds.delete(file.fieldId);
+      } catch (error) {
+        summary.attachmentFailures++;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `attachment delete failed: ${file.attributes.name} on "${item.title}" — ${message}`,
+        );
+      }
+    }
+
+    for (const attachment of mapped.attachments) {
+      const fieldId =
+        mapped.attachmentFieldIds.get(attachment.filePath) ??
+        attachment.filename;
+
+      if (presentFieldIds.has(fieldId)) {
+        continue;
+      }
+
+      try {
+        const content = attachmentScanner.readFile(attachment);
+        current = await this.client.items.files.attach(current, {
+          name: attachment.filename,
+          content,
+          sectionId: ATTACHMENTS_SECTION_ID,
+          fieldId,
+        });
+        presentFieldIds.add(fieldId);
+        summary.attachmentsUploaded++;
+      } catch (error) {
+        summary.attachmentFailures++;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `attachment failed: ${attachment.filename} on "${item.title}" — ${message}`,
+        );
+      }
+    }
+
+    return current;
+  }
+
+  /** Attach all export files to a newly created item. */
   private async uploadAttachments(
     item: Item,
     mapped: MappedItem,

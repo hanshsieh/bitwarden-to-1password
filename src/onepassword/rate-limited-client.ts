@@ -94,6 +94,10 @@ export function createRateLimitedClient(
       files: {
         attach: (item, fileParams) =>
           scheduleWrite(() => client.items.files.attach(item, fileParams)),
+        delete: (item, sectionId, fieldId) =>
+          scheduleWrite(() =>
+            client.items.files.delete(item, sectionId, fieldId),
+          ),
       },
     },
   };

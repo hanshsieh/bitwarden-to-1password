@@ -21,6 +21,7 @@ export interface MockClientState {
   deleteCalls: string[];
   archiveCalls: string[];
   attachCalls: FileCreateParams[];
+  deleteFileCalls: Array<{ sectionId: string; fieldId: string }>;
 }
 
 function normalizeItems(
@@ -57,6 +58,7 @@ export function createMockClient(
     deleteCalls: [],
     archiveCalls: [],
     attachCalls: [],
+    deleteFileCalls: [],
   };
 
   if (state.items.size > 0 && state.overviews.length === 0) {
@@ -152,6 +154,16 @@ export function createMockClient(
             sectionId: fileParams.sectionId,
             fieldId: fileParams.fieldId,
           });
+          state.items.set(updated.id, updated);
+          return updated;
+        },
+        delete: async (item, sectionId, fieldId) => {
+          state.deleteFileCalls.push({ sectionId, fieldId });
+          const updated = structuredClone(item);
+          updated.files = updated.files.filter(
+            (file) =>
+              !(file.sectionId === sectionId && file.fieldId === fieldId),
+          );
           state.items.set(updated.id, updated);
           return updated;
         },

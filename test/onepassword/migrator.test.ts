@@ -430,6 +430,94 @@ describe("migrator", () => {
     assert.equal(state.attachCalls[0]?.fieldId, backFieldId);
   });
 
+  it("deletes attachment field IDs that are not in the export", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    const itemId = "cipher-id-card";
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            id: itemId,
+            type: 2,
+            name: "身分證",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const attachmentDir = join(dir, "attachments", itemId);
+    mkdirSync(attachmentDir, { recursive: true });
+    writeFileSync(join(attachmentDir, "身分證正面.jpg"), "front-bytes");
+    writeFileSync(join(attachmentDir, "身分證背面.jpg"), "back-bytes");
+
+    const frontFieldId = attachmentFieldId(Buffer.from("front-bytes"));
+    const backFieldId = attachmentFieldId(Buffer.from("back-bytes"));
+
+    const existing = makeLoginItem("existing-1", "身分證", "");
+    existing.category = ItemCategory.SecureNote;
+    existing.fields = [];
+    existing.websites = [];
+    existing.files = [
+      {
+        attributes: {
+          id: "file-legacy",
+          name: "身分證正面.jpg",
+          size: 11,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: "jpg",
+      },
+      {
+        attributes: {
+          id: "file-index",
+          name: "身分證正面.jpg",
+          size: 11,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: "attachment_0",
+      },
+      {
+        attributes: {
+          id: "file-front",
+          name: "身分證正面.jpg",
+          size: 11,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: frontFieldId,
+      },
+      {
+        attributes: {
+          id: "file-back",
+          name: "身分證背面.jpg",
+          size: 10,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: backFieldId,
+      },
+    ];
+
+    const { client, state } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    assert.equal(summary.updated, 1);
+    assert.equal(summary.attachmentsUploaded, 0);
+    assert.equal(state.attachCalls.length, 0);
+    assert.equal(state.deleteFileCalls.length, 2);
+    assert.deepEqual(
+      state.deleteFileCalls.map((call) => call.fieldId).sort(),
+      ["attachment_0", "jpg"],
+    );
+    assert.equal(state.items.get("existing-1")?.files.length, 2);
+  });
+
   it("skips attachment upload when item already has all export files", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     const itemId = "cipher-id-card";
