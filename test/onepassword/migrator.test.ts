@@ -201,7 +201,7 @@ describe("migrator", () => {
     existing.fields.push({
       id: "password",
       title: "password",
-      fieldType: 1,
+      fieldType: ItemFieldType.Concealed,
       value: "secret",
     });
 
