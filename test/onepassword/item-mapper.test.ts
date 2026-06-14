@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
   ATTACHMENTS_SECTION_ID,
+  CUSTOM_FIELDS_SECTION_ID,
+  CUSTOM_FIELDS_SECTION_TITLE,
   SSH_KEYS_SECTION_ID,
   bitwardenUriMatchToAutofillBehavior,
   extractBitwardenUsername,
@@ -52,7 +54,14 @@ describe("item-mapper", () => {
     const pin = mapped.params.fields?.find((f) => f.title === "Secret PIN");
     assert.equal(pin?.fieldType, ItemFieldType.Concealed);
     assert.equal(pin?.id, "cust_1");
-    assert.equal(pin?.sectionId, undefined);
+    assert.equal(pin?.sectionId, CUSTOM_FIELDS_SECTION_ID);
+    assert.ok(
+      mapped.params.sections?.some(
+        (s) =>
+          s.id === CUSTOM_FIELDS_SECTION_ID &&
+          s.title === CUSTOM_FIELDS_SECTION_TITLE,
+      ),
+    );
 
     assert.ok(
       !mapped.params.fields?.some((f) => f.title.includes("Linked field")),
@@ -108,7 +117,7 @@ describe("item-mapper", () => {
     const ssn = mapped.params.fields?.find((f) => f.title === "SSN");
     assert.equal(ssn?.value, "123-45-6789");
     assert.match(ssn?.id ?? "", /^cust_\d+$/);
-    assert.equal(ssn?.sectionId, undefined);
+    assert.equal(ssn?.sectionId, CUSTOM_FIELDS_SECTION_ID);
   });
 
   it("maps SSH key private key field", () => {

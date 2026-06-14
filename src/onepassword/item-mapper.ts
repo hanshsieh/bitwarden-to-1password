@@ -22,7 +22,7 @@ import type { MappedItem } from "./types.js";
 /** Well-known 1Password section IDs used when mapping Bitwarden data. */
 export class OnePasswordItemMapper {
   static readonly CUSTOM_FIELDS_SECTION_ID = "custom_fields";
-  static readonly CUSTOM_FIELDS_SECTION_TITLE = "Custom fields";
+  static readonly CUSTOM_FIELDS_SECTION_TITLE = "Custom";
   static readonly ATTACHMENTS_SECTION_ID = "attachments";
   static readonly ATTACHMENTS_SECTION_TITLE = "Attachments";
   static readonly SSH_KEYS_SECTION_ID = "keys";
@@ -43,8 +43,8 @@ export class OnePasswordItemMapper {
    *
    * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
    * omitted because the 1Password SDK rejects them as tags. Custom fields use
-   * indexed IDs (`cust_0`, …) with no section. Attachment metadata is returned
-   * separately for upload after create.
+   * indexed IDs (`cust_0`, …) in the "Custom" section. Attachment metadata is
+   * returned separately for upload after create.
    */
   map(
     item: ParsedBitwardenItem,
@@ -91,6 +91,7 @@ export class OnePasswordItemMapper {
 
     const hasSshKey = item.type === 5 && Boolean(item.sshKey?.privateKey);
     const sections = this.buildSections(
+      customFields.length > 0,
       attachments.length > 0,
       hasSshKey,
     );
@@ -311,6 +312,7 @@ export class OnePasswordItemMapper {
         extra.push({
           id: `cust_${customIndex}`,
           title: label,
+          sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
           fieldType: ItemFieldType.Text,
           value: value.trim(),
         });
@@ -396,6 +398,7 @@ export class OnePasswordItemMapper {
     return {
       id,
       title,
+      sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
       fieldType,
       value,
     };
@@ -413,6 +416,7 @@ export class OnePasswordItemMapper {
   }
 
   private buildSections(
+    hasCustomFields: boolean,
     hasAttachments: boolean,
     hasSshKey: boolean,
   ): ItemSection[] {
@@ -422,6 +426,13 @@ export class OnePasswordItemMapper {
       sections.push({
         id: OnePasswordItemMapper.SSH_KEYS_SECTION_ID,
         title: "Keys",
+      });
+    }
+
+    if (hasCustomFields) {
+      sections.push({
+        id: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
+        title: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_TITLE,
       });
     }
 
