@@ -376,7 +376,7 @@ describe("migrator", () => {
     assert.deepEqual(summary.regexUrlItems, ["Regex Login"]);
   });
 
-  it("uploads only missing attachments when file field IDs differ", async () => {
+  it("replaces all attachments when file field IDs differ", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     const itemId = "cipher-id-card";
     writeFileSync(
@@ -433,13 +433,18 @@ describe("migrator", () => {
     });
 
     assert.equal(summary.updated, 1);
-    assert.equal(summary.attachmentsUploaded, 1);
-    assert.equal(state.attachCalls.length, 1);
-    assert.equal(state.attachCalls[0]?.name, "身分證背面.jpg");
-    assert.equal(state.attachCalls[0]?.fieldId, backFieldId);
+    assert.equal(summary.attachmentsUploaded, 2);
+    assert.equal(state.deleteFileCalls.length, 1);
+    assert.equal(state.attachCalls.length, 2);
+    assert.deepEqual(
+      state.attachCalls.map((call) => call.name).sort(),
+      ["身分證正面.jpg", "身分證背面.jpg"],
+    );
+    assert.equal(state.attachCalls[0]?.fieldId, frontFieldId);
+    assert.equal(state.attachCalls[1]?.fieldId, backFieldId);
   });
 
-  it("deletes attachment field IDs that are not in the export", async () => {
+  it("replaces all attachments when extra field IDs exist", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     const itemId = "cipher-id-card";
     writeFileSync(
@@ -523,13 +528,9 @@ describe("migrator", () => {
     });
 
     assert.equal(summary.updated, 1);
-    assert.equal(summary.attachmentsUploaded, 0);
-    assert.equal(state.attachCalls.length, 0);
-    assert.equal(state.deleteFileCalls.length, 2);
-    assert.deepEqual(
-      state.deleteFileCalls.map((call) => call.fieldId).sort(),
-      ["attachment_0", "jpg"],
-    );
+    assert.equal(summary.attachmentsUploaded, 2);
+    assert.equal(state.deleteFileCalls.length, 4);
+    assert.equal(state.attachCalls.length, 2);
     assert.equal(state.items.get("existing-1")?.files.length, 2);
   });
 

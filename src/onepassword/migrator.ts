@@ -1,4 +1,4 @@
-import type { Item, ItemFile } from "@1password/sdk";
+import type { Item } from "@1password/sdk";
 import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
 import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
@@ -222,6 +222,7 @@ export class Migrator {
       existing.sections,
       desired.sections,
     );
+    const needsUpdate = !fieldContentMatches || !filesMatch;
 
     if (!fieldContentMatches) {
       if (hasNonAsciiBitwardenLabels(sourceItem, exportData)) {
@@ -234,17 +235,16 @@ export class Migrator {
       current = await this.client.items.put(toWrite);
     }
 
-    if (!filesMatch) {
+    if (needsUpdate) {
       current = await this.syncAttachments(
         current,
         mapped,
-        expectedFiles,
         attachmentScanner,
         summary,
       );
     }
 
-    if (!fieldContentMatches || !filesMatch) {
+    if (needsUpdate) {
       summary.updated++;
       console.log(`updated: ${sourceItem.name} (${current.id})`);
     } else {
@@ -288,32 +288,24 @@ export class Migrator {
   }
 
   /**
-   * Align item attachments with the export: remove files whose field IDs are
-   * not in the preferred set, then attach any preferred files that are missing.
+   * Replace item attachments with the export: remove all existing files,
+   * then attach every file from the export.
    */
   private async syncAttachments(
     item: Item,
     mapped: MappedItem,
-    expectedFiles: ItemFile[],
     attachmentScanner: BitwardenAttachmentScanner,
     summary: MigrationSummary,
   ): Promise<Item> {
     let current = item;
-    const preferredFieldIds = new Set(expectedFiles.map((file) => file.fieldId));
-    let presentFieldIds = MergeEngine.existingAttachmentFieldIds(current);
 
     for (const file of [...current.files]) {
-      if (preferredFieldIds.has(file.fieldId)) {
-        continue;
-      }
-
       try {
         current = await this.client.items.files.delete(
           current,
           file.sectionId,
           file.fieldId,
         );
-        presentFieldIds.delete(file.fieldId);
       } catch (error) {
         summary.attachmentFailures++;
         const message = error instanceof Error ? error.message : String(error);
@@ -328,10 +320,6 @@ export class Migrator {
         mapped.attachmentFieldIds.get(attachment.filePath) ??
         attachment.filename;
 
-      if (presentFieldIds.has(fieldId)) {
-        continue;
-      }
-
       try {
         const content = attachmentScanner.readFile(attachment);
         current = await this.client.items.files.attach(current, {
@@ -340,7 +328,6 @@ export class Migrator {
           sectionId: ATTACHMENTS_SECTION_ID,
           fieldId,
         });
-        presentFieldIds.add(fieldId);
         summary.attachmentsUploaded++;
       } catch (error) {
         summary.attachmentFailures++;
