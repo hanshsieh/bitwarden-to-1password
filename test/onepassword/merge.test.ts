@@ -35,6 +35,7 @@ describe("merge engine", () => {
       "user@example.com",
     );
     assert.deepEqual(matchIndex.index.get(key), ["existing-1"]);
+    assert.equal(matchIndex.itemsById.get("existing-1")?.title, "Example Login");
   });
 
   it("decideMergeAction handles all strategies", () => {

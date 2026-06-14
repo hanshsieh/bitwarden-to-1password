@@ -28,6 +28,8 @@ export type MatchKey = string;
 /** In-memory index of existing vault items for duplicate detection. */
 export interface MatchIndex {
   index: Map<MatchKey, string[]>;
+  /** Full items prefetched during index build; updated after writes in the same run. */
+  itemsById: Map<string, Item>;
 }
 
 /**
@@ -63,9 +65,10 @@ export class MergeEngine {
   async buildIndex(vaultId: string): Promise<MatchIndex> {
     const overviews = await this.client.items.list(vaultId);
     const index = new Map<MatchKey, string[]>();
+    const itemsById = new Map<string, Item>();
 
     if (overviews.length === 0) {
-      return { index };
+      return { index, itemsById };
     }
 
     const ids = overviews.map((o) => o.id);
@@ -74,6 +77,7 @@ export class MergeEngine {
     for (const entry of response.individualResponses) {
       if (!entry.content) continue;
       const item = entry.content;
+      itemsById.set(item.id, item);
       const username = this.itemMapper.extractOnePasswordUsername(
         item.fields,
         item.category,
@@ -88,7 +92,21 @@ export class MergeEngine {
       index.set(key, existing);
     }
 
-    return { index };
+    return { index, itemsById };
+  }
+
+  /** Return a copy of a prefetched vault item (same isolation as items.get). */
+  static getCachedItem(matchIndex: MatchIndex, itemId: string): Item {
+    const item = matchIndex.itemsById.get(itemId);
+    if (!item) {
+      throw new Error(`Item not found in match index: ${itemId}`);
+    }
+    return structuredClone(item);
+  }
+
+  /** Keep the in-memory cache in sync after a create, put, or attachment change. */
+  static setCachedItem(matchIndex: MatchIndex, item: Item): void {
+    matchIndex.itemsById.set(item.id, structuredClone(item));
   }
 
   /** Find existing item IDs that match an export cipher. */
@@ -279,7 +297,7 @@ export class MergeEngine {
       index.set(key, existing);
     }
 
-    return { index };
+    return { index, itemsById };
   }
 
   private static sectionTitle(
@@ -441,6 +459,17 @@ export function existingAttachmentFieldIds(item: Item): Set<string> {
 
 export function stripNonAsciiTags(item: Item): void {
   MergeEngine.stripNonAsciiTags(item);
+}
+
+export function getCachedItem(
+  matchIndex: MatchIndex,
+  itemId: string,
+): Item {
+  return MergeEngine.getCachedItem(matchIndex, itemId);
+}
+
+export function setCachedItem(matchIndex: MatchIndex, item: Item): void {
+  MergeEngine.setCachedItem(matchIndex, item);
 }
 
 export const buildMatchIndexFromOverviews = MergeEngine.buildIndexFromOverviews;

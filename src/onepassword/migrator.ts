@@ -15,7 +15,7 @@ import {
   ATTACHMENTS_SECTION_ID,
   OnePasswordItemMapper,
 } from "./item-mapper.js";
-import { MergeEngine } from "./merge-engine.js";
+import { MergeEngine, type MatchIndex } from "./merge-engine.js";
 import type {
   MappedItem,
   MergeStrategy,
@@ -101,7 +101,7 @@ export class Migrator {
     exportData: ParsedBitwardenExport,
     options: MigrateOptions,
     attachmentScanner: BitwardenAttachmentScanner,
-    matchIndex: Awaited<ReturnType<MergeEngine["buildIndex"]>>,
+    matchIndex: MatchIndex,
     summary: MigrationSummary,
   ): Promise<void> {
     const attachments = attachmentScanner.scanForItem(item.id);
@@ -158,6 +158,7 @@ export class Migrator {
           decision.targetItemId,
           mapped,
           attachmentScanner,
+          matchIndex,
           summary,
         );
       }
@@ -201,9 +202,10 @@ export class Migrator {
     targetItemId: string,
     mapped: MappedItem,
     attachmentScanner: BitwardenAttachmentScanner,
+    matchIndex: MatchIndex,
     summary: MigrationSummary,
   ): Promise<void> {
-    const existing = await this.client.items.get(vaultId, targetItemId);
+    const existing = MergeEngine.getCachedItem(matchIndex, targetItemId);
     const expectedFiles = MergeEngine.expectedFilesFromMapped(mapped);
     const desired = MergeEngine.buildDesiredItem(
       existing,
@@ -231,6 +233,7 @@ export class Migrator {
         desired,
       );
       current = await this.client.items.put(toWrite);
+      MergeEngine.setCachedItem(matchIndex, current);
     }
 
     if (!filesMatch) {
@@ -240,6 +243,7 @@ export class Migrator {
         attachmentScanner,
         summary,
       );
+      MergeEngine.setCachedItem(matchIndex, current);
     }
 
     if (needsUpdate) {

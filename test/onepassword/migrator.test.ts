@@ -159,6 +159,7 @@ describe("migrator", () => {
     assert.equal(summary.unchanged, 1);
     assert.equal(summary.failed, 0);
     assert.equal(state.putCalls.length, 0);
+    assert.equal(state.getCalls.length, 0);
     assert.deepEqual(state.items.get("existing-1")?.tags, ["雲端空間"]);
     assert.deepEqual(summary.nonAsciiTagsSkipped, []);
   });
@@ -602,6 +603,7 @@ describe("migrator", () => {
     assert.equal(summary.unchanged, 1);
     assert.equal(summary.attachmentsUploaded, 0);
     assert.equal(state.attachCalls.length, 0);
+    assert.equal(state.getCalls.length, 0);
   });
 
   it("archives items when export has archivedDate", async () => {

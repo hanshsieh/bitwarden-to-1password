@@ -1,4 +1,5 @@
 import {
+  AutofillBehavior,
   ItemCategory,
   ItemFieldType,
   ItemState,
@@ -22,6 +23,7 @@ export interface MockClientState {
   archiveCalls: string[];
   attachCalls: FileCreateParams[];
   deleteFileCalls: Array<{ sectionId: string; fieldId: string }>;
+  getCalls: string[];
 }
 
 function normalizeItems(
@@ -59,6 +61,7 @@ export function createMockClient(
     archiveCalls: [],
     attachCalls: [],
     deleteFileCalls: [],
+    getCalls: [],
   };
 
   if (state.items.size > 0 && state.overviews.length === 0) {
@@ -72,6 +75,7 @@ export function createMockClient(
     items: {
       list: async (_vaultId) => state.overviews,
       get: async (_vaultId, itemId) => {
+        state.getCalls.push(itemId);
         const item = state.items.get(itemId);
         if (!item) throw new Error(`Item not found: ${itemId}`);
         return structuredClone(item);
@@ -229,7 +233,7 @@ export function makeLoginItem(
       {
         url: "https://existing.example.com",
         label: "website",
-        autofillBehavior: "AnywhereOnWebsite" as const,
+        autofillBehavior: AutofillBehavior.AnywhereOnWebsite,
       },
     ],
     version: 1,
