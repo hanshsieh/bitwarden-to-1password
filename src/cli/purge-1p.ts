@@ -6,7 +6,7 @@ export interface PurgeCommandOptions {
   yes: boolean;
   dryRun: boolean;
   updatedOnOrAfter?: string;
-  vault?: string;
+  vault: string;
 }
 
 /**

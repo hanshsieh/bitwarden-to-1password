@@ -64,21 +64,24 @@ The tool loads `OP_SERVICE_ACCOUNT_TOKEN` from your `.env` file automatically.
 Import items from an extracted Bitwarden export into a 1Password vault.
 
 ```bash
-npm start -- migrate --bw-dir /path/to/extracted-bitwarden-export
+npm start -- migrate \
+  --bw-dir /path/to/extracted-bitwarden-export \
+  --vault "Personal"
 ```
 
 #### Vault selection
 
-Use `--vault` to target a specific vault by ID or title (case-insensitive substring match):
+`--vault` is required. It targets a vault by ID or title (case-insensitive substring match):
 
 ```bash
 npm start -- migrate --bw-dir /path/to/export --vault "Personal"
 ```
 
-If `--vault` is omitted:
+If the hint matches multiple vaults, the command fails with an error listing the matches. Use `list-vaults` to see accessible vault IDs and titles:
 
-- When the service account has access to **one** vault, that vault is used automatically.
-- When **multiple** vaults are available, the tool prompts you to pick one interactively.
+```bash
+npm start -- list-vaults
+```
 
 #### Merge strategies
 
@@ -93,6 +96,7 @@ When an item in the export may already exist in 1Password, use `--merge-strategy
 ```bash
 npm start -- migrate \
   --bw-dir /path/to/extracted-bitwarden-export \
+  --vault "Personal" \
   --merge-strategy merge
 ```
 
@@ -103,6 +107,7 @@ Preview what would be imported without writing to 1Password:
 ```bash
 npm start -- migrate \
   --bw-dir /path/to/extracted-bitwarden-export \
+  --vault "Personal" \
   --dry-run
 ```
 
@@ -127,28 +132,28 @@ Delete items from a 1Password vault. Useful for resetting a vault before a fresh
 By default, the command prompts you to type `yes` before deleting anything (confirmation is skipped when `--dry-run` is set):
 
 ```bash
-npm start -- purge-1p
+npm start -- purge-1p --vault "Test Migration"
 ```
 
 Skip the confirmation prompt:
 
 ```bash
-npm start -- purge-1p --yes
+npm start -- purge-1p --vault "Test Migration" --yes
 ```
 
 Preview items that would be deleted without removing anything:
 
 ```bash
-npm start -- purge-1p --dry-run
+npm start -- purge-1p --vault "Test Migration" --dry-run
 ```
 
 Only delete items updated on or after a given time (ISO 8601):
 
 ```bash
-npm start -- purge-1p --updated-on-or-after 2024-01-01T00:00:00Z
+npm start -- purge-1p \
+  --vault "Test Migration" \
+  --updated-on-or-after 2024-01-01T00:00:00Z
 ```
-
-`--vault` uses the same vault resolution rules as `migrate` (flag match, single vault auto-select, or interactive pick).
 
 Combine options as needed:
 

@@ -7,7 +7,7 @@ export interface MigrateCommandOptions {
   bwDir: string;
   mergeStrategy: MergeStrategy;
   dryRun: boolean;
-  vault?: string;
+  vault: string;
 }
 
 /**

@@ -33,7 +33,7 @@ program
     "skip",
   )
   .option("--dry-run", "Preview actions without writing to 1Password", false)
-  .option(
+  .requiredOption(
     "--vault <id-or-title>",
     "Target vault ID or title substring (case-insensitive)",
   )
@@ -84,7 +84,7 @@ program
     "--updated-on-or-after <iso8601>",
     "Only delete items updated on or after this time",
   )
-  .option(
+  .requiredOption(
     "--vault <id-or-title>",
     "Target vault ID or title substring (case-insensitive)",
   )
