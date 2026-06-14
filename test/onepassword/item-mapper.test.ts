@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
@@ -9,6 +11,7 @@ import {
   extractBitwardenUsername,
   mapItem,
 } from "../../src/onepassword/item-mapper.js";
+import { attachmentFieldId } from "../../src/utils/attachment-field-id.js";
 import { BITWARDEN_URI_MATCH } from "../../src/bitwarden/types.js";
 import {
   AutofillBehavior,
@@ -120,11 +123,14 @@ describe("item-mapper", () => {
 
   it("adds attachment section placeholders", () => {
     const login = parsed.items.find((i) => i.type === 1)!;
+    const dir = mkdtempSync(join(tmpdir(), "bw-mapper-"));
+    const filePath = join(dir, "readme.txt");
+    writeFileSync(filePath, "hello");
     const attachments = [
       {
         attachmentId: "att-1",
         filename: "readme.txt",
-        filePath: "/tmp/readme.txt",
+        filePath,
       },
     ];
     const mapped = mapItem(login, parsed, vaultId, attachments);
@@ -132,7 +138,45 @@ describe("item-mapper", () => {
     assert.ok(
       mapped.params.sections?.some((s) => s.id === ATTACHMENTS_SECTION_ID),
     );
-    assert.ok(mapped.attachmentFieldIds.get("/tmp/readme.txt"));
+    assert.equal(
+      mapped.attachmentFieldIds.get(filePath),
+      attachmentFieldId(Buffer.from("hello")),
+    );
+  });
+
+  it("assigns content-based attachment field IDs for non-ASCII filenames", () => {
+    const login = parsed.items.find((i) => i.type === 1)!;
+    const dir = mkdtempSync(join(tmpdir(), "bw-mapper-"));
+    const frontPath = join(dir, "front.jpg");
+    const backPath = join(dir, "back.jpg");
+    writeFileSync(frontPath, "front-bytes");
+    writeFileSync(backPath, "back-bytes");
+    const attachments = [
+      {
+        attachmentId: null,
+        filename: "身分證正面.jpg",
+        filePath: frontPath,
+      },
+      {
+        attachmentId: null,
+        filename: "身分證背面.jpg",
+        filePath: backPath,
+      },
+    ];
+    const mapped = mapItem(login, parsed, vaultId, attachments);
+
+    assert.equal(
+      mapped.attachmentFieldIds.get(frontPath),
+      attachmentFieldId(Buffer.from("front-bytes")),
+    );
+    assert.equal(
+      mapped.attachmentFieldIds.get(backPath),
+      attachmentFieldId(Buffer.from("back-bytes")),
+    );
+    assert.notEqual(
+      mapped.attachmentFieldIds.get(frontPath),
+      mapped.attachmentFieldIds.get(backPath),
+    );
   });
 
   it("maps Bitwarden URI match modes to 1Password autofill behavior", () => {

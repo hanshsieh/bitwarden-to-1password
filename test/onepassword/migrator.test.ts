@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
+import { ItemCategory, ItemFieldType } from "@1password/sdk";
 import { migrate } from "../../src/onepassword/migrator.js";
+import { ATTACHMENTS_SECTION_ID } from "../../src/onepassword/item-mapper.js";
+import { attachmentFieldId } from "../../src/utils/attachment-field-id.js";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import { mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
@@ -368,6 +371,127 @@ describe("migrator", () => {
 
     assert.equal(summary.created, 2);
     assert.deepEqual(summary.regexUrlItems, ["Regex Login"]);
+  });
+
+  it("uploads only missing attachments when file field IDs differ", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    const itemId = "cipher-id-card";
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            id: itemId,
+            type: 2,
+            name: "身分證",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const attachmentDir = join(dir, "attachments", itemId);
+    mkdirSync(attachmentDir, { recursive: true });
+    writeFileSync(join(attachmentDir, "身分證正面.jpg"), "front-bytes");
+    writeFileSync(join(attachmentDir, "身分證背面.jpg"), "back-bytes");
+
+    const frontFieldId = attachmentFieldId(Buffer.from("front-bytes"));
+    const backFieldId = attachmentFieldId(Buffer.from("back-bytes"));
+
+    const existing = makeLoginItem("existing-1", "身分證", "");
+    existing.category = ItemCategory.SecureNote;
+    existing.fields = [];
+    existing.websites = [];
+    existing.files = [
+      {
+        attributes: {
+          id: "file-0",
+          name: "身分證正面.jpg",
+          size: 11,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: frontFieldId,
+      },
+    ];
+
+    const { client, state } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    assert.equal(summary.updated, 1);
+    assert.equal(summary.attachmentsUploaded, 1);
+    assert.equal(state.attachCalls.length, 1);
+    assert.equal(state.attachCalls[0]?.name, "身分證背面.jpg");
+    assert.equal(state.attachCalls[0]?.fieldId, backFieldId);
+  });
+
+  it("skips attachment upload when item already has all export files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    const itemId = "cipher-id-card";
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            id: itemId,
+            type: 2,
+            name: "身分證",
+            secureNote: { type: 0 },
+          },
+        ],
+      }),
+    );
+
+    const attachmentDir = join(dir, "attachments", itemId);
+    mkdirSync(attachmentDir, { recursive: true });
+    writeFileSync(join(attachmentDir, "身分證正面.jpg"), "front-bytes");
+    writeFileSync(join(attachmentDir, "身分證背面.jpg"), "back-bytes");
+
+    const frontFieldId = attachmentFieldId(Buffer.from("front-bytes"));
+    const backFieldId = attachmentFieldId(Buffer.from("back-bytes"));
+
+    const existing = makeLoginItem("existing-1", "身分證", "");
+    existing.category = ItemCategory.SecureNote;
+    existing.fields = [];
+    existing.websites = [];
+    existing.files = [
+      {
+        attributes: {
+          id: "file-0",
+          name: "身分證正面.jpg",
+          size: 11,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: frontFieldId,
+      },
+      {
+        attributes: {
+          id: "file-1",
+          name: "身分證背面.jpg",
+          size: 10,
+        },
+        sectionId: ATTACHMENTS_SECTION_ID,
+        fieldId: backFieldId,
+      },
+    ];
+
+    const { client, state } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    assert.equal(summary.unchanged, 1);
+    assert.equal(summary.attachmentsUploaded, 0);
+    assert.equal(state.attachCalls.length, 0);
   });
 
   it("archives items when export has archivedDate", async () => {

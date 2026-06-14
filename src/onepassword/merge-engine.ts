@@ -3,23 +3,25 @@ import type {
   ItemCategory,
   ItemCreateParams,
   ItemField,
+  ItemFile,
   ItemOverview,
   Website,
 } from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
 import { filterSdkSafeTags } from "./tags.js";
-import { normalizeUsername } from "../utils/normalize.js";
 import {
   OnePasswordItemMapper,
+  ATTACHMENTS_SECTION_ID,
   bitwardenTypeToCategory,
 } from "./item-mapper.js";
 import type {
+  MappedItem,
   MergeDecision,
   MergeStrategy,
   OnePasswordClient,
 } from "./types.js";
 
-/** Composite lookup key: category + title + normalized username. */
+/** Composite lookup key: category + title + username. */
 export type MatchKey = string;
 
 /** In-memory index of existing vault items for duplicate detection. */
@@ -42,7 +44,7 @@ export class MergeEngine {
   }
 
   /**
-   * Build a match index key from category, title, and normalized username.
+   * Build a match index key from category, title, and username.
    * Null bytes separate segments so titles cannot collide with usernames.
    */
   static buildMatchKey(
@@ -50,7 +52,7 @@ export class MergeEngine {
     title: string,
     username: string,
   ): MatchKey {
-    return `${category}\0${title}\0${normalizeUsername(username)}`;
+    return `${category}\0${title}\0${username}`;
   }
 
   /**
@@ -159,7 +161,11 @@ export class MergeEngine {
    * Build the target item state from mapped export params while preserving
    * server-managed metadata on an existing vault item.
    */
-  static buildDesiredItem(existing: Item, params: ItemCreateParams): Item {
+  static buildDesiredItem(
+    existing: Item,
+    params: ItemCreateParams,
+    expectedFiles: ItemFile[] = [],
+  ): Item {
     return {
       ...existing,
       title: params.title,
@@ -169,14 +175,32 @@ export class MergeEngine {
       notes: params.notes ?? "",
       tags: [...(params.tags ?? [])],
       websites: structuredClone(params.websites ?? []),
+      files: structuredClone(expectedFiles),
     };
+  }
+
+  /** Expected attachment file fields from a mapped export item. */
+  static expectedFilesFromMapped(mapped: MappedItem): ItemFile[] {
+    return mapped.attachments.map((attachment) => ({
+      attributes: {
+        id: "",
+        name: attachment.filename,
+        size: 0,
+      },
+      sectionId: ATTACHMENTS_SECTION_ID,
+      fieldId:
+        mapped.attachmentFieldIds.get(attachment.filePath) ??
+        attachment.filename,
+    }));
   }
 
   /**
    * True when an existing vault item already matches the desired export state.
    * Fields are compared strictly (order, ids, types, values). Field sectionId
    * is ignored because 1Password may assign sections on save. Tags match when
-   * every desired tag is present on the actual item (order ignored).
+   * every desired tag is present on the actual item (order ignored). Files match
+   * when counts are equal and each pair of corresponding entries shares the same
+   * fieldId (sectionId is ignored).
    */
   static itemsMatchDesired(actual: Item, desired: Item): boolean {
     return (
@@ -185,7 +209,8 @@ export class MergeEngine {
       (actual.notes ?? "") === (desired.notes ?? "") &&
       MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
       MergeEngine.websitesEqual(actual.websites, desired.websites) &&
-      MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
+      MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags) &&
+      MergeEngine.filesEqual(actual.files, desired.files)
     );
   }
 
@@ -206,7 +231,7 @@ export class MergeEngine {
     item.tags = filterSdkSafeTags(item.tags);
   }
 
-  /** Field IDs already used by attachments on an item (skip re-upload on sync). */
+  /** Field IDs already used by file fields on an item. */
   static existingAttachmentFieldIds(item: Item): Set<string> {
     return new Set(item.files.map((f) => f.fieldId));
   }
@@ -273,6 +298,21 @@ export class MergeEngine {
 
     return serialize(a) === serialize(b);
   }
+
+  private static filesEqual(a: ItemFile[], b: ItemFile[]): boolean {
+    if (a.length !== b.length) return false;
+
+    const byFieldId = (files: ItemFile[]) =>
+      [...files].sort((left, right) =>
+        left.fieldId.localeCompare(right.fieldId),
+      );
+
+    const actual = byFieldId(a);
+    const desired = byFieldId(b);
+    return actual.every(
+      (file, index) => file.fieldId === desired[index]!.fieldId,
+    );
+  }
 }
 
 // Thin function exports preserve test and legacy import paths.
@@ -302,8 +342,13 @@ export function findMatches(
 export function buildDesiredItem(
   existing: Item,
   params: ItemCreateParams,
+  expectedFiles: ItemFile[] = [],
 ): Item {
-  return MergeEngine.buildDesiredItem(existing, params);
+  return MergeEngine.buildDesiredItem(existing, params, expectedFiles);
+}
+
+export function expectedFilesFromMapped(mapped: MappedItem): ItemFile[] {
+  return MergeEngine.expectedFilesFromMapped(mapped);
 }
 
 export function itemsMatchDesired(actual: Item, desired: Item): boolean {

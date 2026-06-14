@@ -12,7 +12,7 @@ import type {
   ParsedBitwardenExport,
   ParsedBitwardenItem,
 } from "../bitwarden/types.js";
-import { slugify } from "../utils/normalize.js";
+import { attachmentFieldIdFromPath } from "../utils/attachment-field-id.js";
 import {
   collectBitwardenLabels,
   mapBitwardenLabelsForSdk,
@@ -401,15 +401,13 @@ export class OnePasswordItemMapper {
     };
   }
 
-  /** Stable field IDs for attachment upload (attachmentId or slugified filename). */
+  /** Stable field IDs for attachment upload (`attach_{sha1}` from file content). */
   private buildAttachmentFieldIds(
     attachments: BitwardenAttachment[],
   ): Map<string, string> {
     const map = new Map<string, string>();
     for (const attachment of attachments) {
-      const fieldId =
-        attachment.attachmentId ?? slugify(attachment.filename);
-      map.set(attachment.filePath, fieldId);
+      map.set(attachment.filePath, attachmentFieldIdFromPath(attachment.filePath));
     }
     return map;
   }

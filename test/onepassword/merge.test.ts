@@ -9,10 +9,11 @@ import {
   buildMatchIndex,
   buildMatchKey,
   decideMergeAction,
+  expectedFilesFromMapped,
   itemsMatchDesired,
   stripNonAsciiTags,
 } from "../../src/onepassword/merge-engine.js";
-import { mapItem } from "../../src/onepassword/item-mapper.js";
+import { ATTACHMENTS_SECTION_ID, mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
@@ -59,7 +60,11 @@ describe("merge engine", () => {
       "user@example.com",
     );
     const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(existing, mapped.params);
+    const desired = buildDesiredItem(
+      existing,
+      mapped.params,
+      expectedFilesFromMapped(mapped),
+    );
 
     assert.equal(itemsMatchDesired(existing, desired), false);
 
@@ -82,7 +87,11 @@ describe("merge engine", () => {
       "user@example.com",
     );
     const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(existing, mapped.params);
+    const desired = buildDesiredItem(
+      existing,
+      mapped.params,
+      expectedFilesFromMapped(mapped),
+    );
     const synced = applyDesiredContent(structuredClone(existing), desired);
 
     synced.fields = synced.fields.map((field) =>
@@ -117,6 +126,52 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(existing, desired), true);
   });
 
+  it("itemsMatchDesired compares attachment field IDs and ignores sectionId", () => {
+    const existing = makeLoginItem(
+      "existing-1",
+      "Example Login",
+      "user@example.com",
+    );
+    const desired = buildDesiredItem(
+      existing,
+      {
+        category: ItemCategory.Login,
+        vaultId: "vault-1",
+        title: "Example Login",
+      },
+      [
+        {
+          attributes: { id: "file-1", name: "readme.txt", size: 5 },
+          sectionId: ATTACHMENTS_SECTION_ID,
+          fieldId: "attach_abc",
+        },
+      ],
+    );
+
+    existing.fields = desired.fields;
+    existing.websites = desired.websites;
+    existing.notes = desired.notes;
+    existing.sections = desired.sections;
+    existing.files = [];
+    assert.equal(itemsMatchDesired(existing, desired), false);
+
+    existing.files = [
+      {
+        attributes: { id: "file-1", name: "readme.txt", size: 5 },
+        sectionId: "other_section",
+        fieldId: "attach_abc",
+      },
+    ];
+    assert.equal(itemsMatchDesired(existing, desired), true);
+
+    existing.files.push({
+      attributes: { id: "file-2", name: "extra.txt", size: 1 },
+      sectionId: ATTACHMENTS_SECTION_ID,
+      fieldId: "attach_def",
+    });
+    assert.equal(itemsMatchDesired(existing, desired), false);
+  });
+
   it("applyDesiredContent overwrites migratable fields", () => {
     const existing = makeLoginItem(
       "existing-1",
@@ -133,7 +188,11 @@ describe("merge engine", () => {
     });
 
     const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(existing, mapped.params);
+    const desired = buildDesiredItem(
+      existing,
+      mapped.params,
+      expectedFilesFromMapped(mapped),
+    );
     const updated = applyDesiredContent(structuredClone(existing), desired);
 
     assert.equal(updated.notes, "Login notes");

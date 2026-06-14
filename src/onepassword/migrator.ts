@@ -204,7 +204,12 @@ export class Migrator {
     summary: MigrationSummary,
   ): Promise<void> {
     const existing = await this.client.items.get(vaultId, targetItemId);
-    const desired = MergeEngine.buildDesiredItem(existing, mapped.params);
+    const expectedFiles = MergeEngine.expectedFilesFromMapped(mapped);
+    const desired = MergeEngine.buildDesiredItem(
+      existing,
+      mapped.params,
+      expectedFiles,
+    );
 
     let current = existing;
     if (!MergeEngine.itemsMatchDesired(existing, desired)) {
@@ -228,7 +233,6 @@ export class Migrator {
       mapped,
       attachmentScanner,
       summary,
-      MergeEngine.existingAttachmentFieldIds(current),
     );
     await this.applyArchivedState(
       vaultId,
@@ -271,9 +275,9 @@ export class Migrator {
     mapped: MappedItem,
     attachmentScanner: BitwardenAttachmentScanner,
     summary: MigrationSummary,
-    skipFieldIds: Set<string> = new Set(),
   ): Promise<Item> {
     let current = item;
+    const skipFieldIds = MergeEngine.existingAttachmentFieldIds(current);
 
     for (const attachment of mapped.attachments) {
       const fieldId =
@@ -292,6 +296,7 @@ export class Migrator {
           sectionId: ATTACHMENTS_SECTION_ID,
           fieldId,
         });
+        skipFieldIds.add(fieldId);
         summary.attachmentsUploaded++;
       } catch (error) {
         summary.attachmentFailures++;
