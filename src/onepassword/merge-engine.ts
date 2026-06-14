@@ -174,7 +174,8 @@ export class MergeEngine {
 
   /**
    * True when an existing vault item already matches the desired export state.
-   * Fields are compared strictly (order, ids, types, values). Tags match when
+   * Fields are compared strictly (order, ids, types, values). Field sectionId
+   * is ignored because 1Password may assign sections on save. Tags match when
    * every desired tag is present on the actual item (order ignored).
    */
   static itemsMatchDesired(actual: Item, desired: Item): boolean {
@@ -183,7 +184,6 @@ export class MergeEngine {
       actual.category === desired.category &&
       (actual.notes ?? "") === (desired.notes ?? "") &&
       MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
-      MergeEngine.sectionsEqual(actual.sections, desired.sections) &&
       MergeEngine.websitesEqual(actual.websites, desired.websites) &&
       MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
     );
@@ -243,7 +243,6 @@ export class MergeEngine {
       a.title === b.title &&
       a.fieldType === b.fieldType &&
       a.value === b.value &&
-      (a.sectionId ?? undefined) === (b.sectionId ?? undefined) &&
       JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null)
     );
   }
@@ -269,21 +268,6 @@ export class MergeEngine {
     const serialize = (websites: Website[]) =>
       [...websites]
         .map((website) => JSON.stringify(website))
-        .sort()
-        .join("\0");
-
-    return serialize(a) === serialize(b);
-  }
-
-  private static sectionsEqual(
-    a: Item["sections"],
-    b: Item["sections"],
-  ): boolean {
-    if (a.length !== b.length) return false;
-
-    const serialize = (sections: Item["sections"]) =>
-      [...sections]
-        .map((section) => JSON.stringify(section))
         .sort()
         .join("\0");
 

@@ -75,6 +75,25 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(differentId, desired), false);
   });
 
+  it("itemsMatchDesired ignores field sectionId differences", () => {
+    const existing = makeLoginItem(
+      "existing-1",
+      "Example Login",
+      "user@example.com",
+    );
+    const mapped = mapItem(loginItem, parsed, "vault-1");
+    const desired = buildDesiredItem(existing, mapped.params);
+    const synced = applyDesiredContent(structuredClone(existing), desired);
+
+    synced.fields = synced.fields.map((field) =>
+      field.id.startsWith("cust_")
+        ? { ...field, sectionId: "section_auto" }
+        : field,
+    );
+
+    assert.equal(itemsMatchDesired(synced, desired), true);
+  });
+
   it("itemsMatchDesired treats desired tags as a subset of actual tags", () => {
     const existing = makeLoginItem("a", "Login", "user@example.com");
     const desired = buildDesiredItem(existing, {
