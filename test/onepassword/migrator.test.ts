@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
-import { ItemCategory, ItemFieldType } from "@1password/sdk";
+import { AutofillBehavior, ItemCategory, ItemFieldType } from "@1password/sdk";
 import { migrate } from "../../src/onepassword/migrator.js";
 import {
   ATTACHMENTS_SECTION_ID,
@@ -195,7 +195,7 @@ describe("migrator", () => {
       {
         url: "https://example.com",
         label: "website",
-        autofillBehavior: "AnywhereOnWebsite" as const,
+        autofillBehavior: AutofillBehavior.AnywhereOnWebsite,
       },
     ];
     existing.fields.push({

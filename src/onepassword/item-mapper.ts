@@ -26,6 +26,7 @@ export class OnePasswordItemMapper {
   static readonly ATTACHMENTS_SECTION_ID = "attachments";
   static readonly ATTACHMENTS_SECTION_TITLE = "Attachments";
   static readonly SSH_KEYS_SECTION_ID = "keys";
+  static readonly SSH_KEYS_SECTION_TITLE = "Keys";
 
   private static readonly BW_TYPE_TO_CATEGORY: Record<
     ParsedBitwardenItem["type"],
@@ -425,7 +426,7 @@ export class OnePasswordItemMapper {
     if (hasSshKey) {
       sections.push({
         id: OnePasswordItemMapper.SSH_KEYS_SECTION_ID,
-        title: "Keys",
+        title: OnePasswordItemMapper.SSH_KEYS_SECTION_TITLE,
       });
     }
 
@@ -457,6 +458,8 @@ export const ATTACHMENTS_SECTION_ID =
 export const ATTACHMENTS_SECTION_TITLE =
   OnePasswordItemMapper.ATTACHMENTS_SECTION_TITLE;
 export const SSH_KEYS_SECTION_ID = OnePasswordItemMapper.SSH_KEYS_SECTION_ID;
+export const SSH_KEYS_SECTION_TITLE =
+  OnePasswordItemMapper.SSH_KEYS_SECTION_TITLE;
 
 /** Convenience wrapper using a default mapper instance. */
 export function mapItem(
