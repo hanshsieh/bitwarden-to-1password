@@ -107,6 +107,119 @@ describe("migrator", () => {
     assert.equal(state.putCalls.length, 1);
   });
 
+  it("skips merge update when existing item already matches export", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 1,
+            name: "Synced Login",
+            login: {
+              username: "user@example.com",
+              password: "secret",
+              uris: [{ uri: "https://example.com" }],
+            },
+            notes: "Already synced",
+          },
+        ],
+      }),
+    );
+
+    const existing = makeLoginItem(
+      "existing-1",
+      "Synced Login",
+      "user@example.com",
+    );
+    existing.notes = "Already synced";
+    existing.tags = ["雲端空間"];
+    existing.websites = [
+      {
+        url: "https://example.com",
+        label: "website",
+        autofillBehavior: "AnywhereOnWebsite" as const,
+      },
+    ];
+    existing.fields.push({
+      id: "password",
+      title: "password",
+      fieldType: 1,
+      value: "secret",
+    });
+
+    const { client, state } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    assert.equal(summary.merged, 0);
+    assert.equal(summary.unchanged, 1);
+    assert.equal(summary.failed, 0);
+    assert.equal(state.putCalls.length, 0);
+    assert.deepEqual(state.items.get("existing-1")?.tags, ["雲端空間"]);
+  });
+
+  it("strips non-ASCII tags when merge update is required", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        folders: [{ id: "folder-1", name: "Work" }],
+        items: [
+          {
+            type: 1,
+            name: "Needs Tag",
+            folderId: "folder-1",
+            login: {
+              username: "user@example.com",
+              password: "secret",
+              uris: [{ uri: "https://example.com" }],
+            },
+          },
+        ],
+      }),
+    );
+
+    const existing = makeLoginItem(
+      "existing-1",
+      "Needs Tag",
+      "user@example.com",
+    );
+    existing.tags = ["雲端空間"];
+    existing.websites = [
+      {
+        url: "https://example.com",
+        label: "website",
+        autofillBehavior: "AnywhereOnWebsite" as const,
+      },
+    ];
+    existing.fields.push({
+      id: "password",
+      title: "password",
+      fieldType: 1,
+      value: "secret",
+    });
+
+    const { client, state } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    assert.equal(summary.merged, 1);
+    assert.equal(summary.failed, 0);
+    assert.equal(state.putCalls.length, 1);
+    assert.deepEqual(state.items.get("existing-1")?.tags, ["Work"]);
+  });
+
   it("reports items with FIDO2 credentials in summary", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(

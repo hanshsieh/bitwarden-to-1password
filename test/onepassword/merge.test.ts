@@ -7,7 +7,9 @@ import {
   buildMatchIndex,
   buildMatchKey,
   decideMergeAction,
+  itemsEqualForMerge,
   overlayItem,
+  stripNonAsciiTags,
 } from "../../src/onepassword/merge-engine.js";
 import { mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
@@ -75,5 +77,20 @@ describe("merge engine", () => {
     assert.ok(
       merged.websites.some((w) => w.url === "https://existing.example.com"),
     );
+  });
+
+  it("itemsEqualForMerge ignores tag order", () => {
+    const a = makeLoginItem("a", "Login", "user@example.com");
+    const b = structuredClone(a);
+    a.tags = ["Beta", "Alpha"];
+    b.tags = ["Alpha", "Beta"];
+    assert.equal(itemsEqualForMerge(a, b), true);
+  });
+
+  it("stripNonAsciiTags keeps only ASCII tags", () => {
+    const item = makeLoginItem("a", "Login", "user@example.com");
+    item.tags = ["Work", "雲端空間", "Team"];
+    stripNonAsciiTags(item);
+    assert.deepEqual(item.tags, ["Work", "Team"]);
   });
 });

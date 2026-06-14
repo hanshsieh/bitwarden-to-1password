@@ -198,19 +198,28 @@ export class Migrator {
     summary: MigrationSummary,
   ): Promise<void> {
     const existing = await this.client.items.get(vaultId, targetItemId);
-    const updated = MergeEngine.overlay(
-      existing,
+    const merged = MergeEngine.overlay(
+      structuredClone(existing),
       mapped.params.fields ?? [],
       mapped.params.notes,
       mapped.params.tags,
       mapped.params.websites,
       mapped.params.sections,
     );
-    const saved = await this.client.items.put(updated);
-    summary.merged++;
-    console.log(`merged: ${sourceItem.name} (${saved.id})`);
+
+    let current = existing;
+    if (!MergeEngine.itemsEqualForMerge(existing, merged)) {
+      MergeEngine.stripNonAsciiTags(merged);
+      current = await this.client.items.put(merged);
+      summary.merged++;
+      console.log(`merged: ${sourceItem.name} (${current.id})`);
+    } else {
+      summary.unchanged++;
+      console.log(`unchanged: ${sourceItem.name} (${existing.id})`);
+    }
+
     const withAttachments = await this.uploadAttachments(
-      saved,
+      current,
       mapped,
       attachmentScanner,
       summary,
@@ -336,6 +345,7 @@ export class Migrator {
     return {
       created: 0,
       merged: 0,
+      unchanged: 0,
       skipped: 0,
       failed: 0,
       attachmentsUploaded: 0,
@@ -356,6 +366,7 @@ export class Migrator {
       formatCountTable(`${prefix}Summary`, [
         { label: "Created", value: summary.created },
         { label: "Merged", value: summary.merged },
+        { label: "Unchanged", value: summary.unchanged },
         { label: "Skipped", value: summary.skipped },
         { label: "Failed", value: summary.failed },
         { label: "Archived", value: summary.archived },

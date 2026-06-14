@@ -40,9 +40,14 @@ export function collectBitwardenLabels(
 export function mapBitwardenLabelsForSdk(
   labels: readonly BitwardenLabel[],
 ): string[] {
-  return labels
-    .map((label) => label.name)
-    .filter((name) => isAsciiOnlyTag(name));
+  return filterSdkSafeTags(
+    labels.map((label) => label.name),
+  );
+}
+
+/** Keep only tags the 1Password SDK accepts (ASCII-only). */
+export function filterSdkSafeTags(tags: readonly string[]): string[] {
+  return tags.filter((tag) => isAsciiOnlyTag(tag));
 }
 
 /** True when an item has folder/collection labels that cannot be sent as SDK tags. */

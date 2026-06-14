@@ -57,6 +57,8 @@ export interface MergeDecision {
 export interface MigrationSummary {
   created: number;
   merged: number;
+  /** Merge matches where the vault item already matched the export. */
+  unchanged: number;
   skipped: number;
   failed: number;
   attachmentsUploaded: number;

@@ -1,5 +1,12 @@
-import type { Item, ItemCategory, ItemField, ItemOverview } from "@1password/sdk";
+import type {
+  Item,
+  ItemCategory,
+  ItemField,
+  ItemOverview,
+  Website,
+} from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
+import { filterSdkSafeTags } from "./tags.js";
 import { normalizeUsername } from "../utils/normalize.js";
 import {
   OnePasswordItemMapper,
@@ -168,6 +175,26 @@ export class MergeEngine {
     return existing;
   }
 
+  /**
+   * True when overlay would not change mergeable item content (fields, notes,
+   * tags, websites, sections). Used to skip SDK updates when the vault item
+   * already matches the export, including non-ASCII tags the desktop app allows.
+   */
+  static itemsEqualForMerge(a: Item, b: Item): boolean {
+    return (
+      (a.notes ?? "") === (b.notes ?? "") &&
+      MergeEngine.tagsEqual(a.tags, b.tags) &&
+      MergeEngine.fieldsEqual(a.fields, b.fields) &&
+      MergeEngine.websitesEqual(a.websites, b.websites) &&
+      MergeEngine.sectionsEqual(a.sections, b.sections)
+    );
+  }
+
+  /** Remove tags the SDK rejects; desktop-created items may still carry them. */
+  static stripNonAsciiTags(item: Item): void {
+    item.tags = filterSdkSafeTags(item.tags);
+  }
+
   /** Field IDs already used by attachments on an item (skip re-upload on merge). */
   static existingAttachmentFieldIds(item: Item): Set<string> {
     return new Set(item.files.map((f) => f.fieldId));
@@ -275,6 +302,66 @@ export class MergeEngine {
       }
     }
   }
+
+  private static fieldKey(field: ItemField): string {
+    return field.sectionId ? `${field.sectionId}:${field.id}` : field.id;
+  }
+
+  private static tagsEqual(a: readonly string[], b: readonly string[]): boolean {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((tag, index) => tag === sortedB[index]);
+  }
+
+  private static fieldsEqual(a: ItemField[], b: ItemField[]): boolean {
+    if (a.length !== b.length) return false;
+
+    const byKey = (fields: ItemField[]) =>
+      new Map(fields.map((field) => [MergeEngine.fieldKey(field), field]));
+
+    const mapA = byKey(a);
+    const mapB = byKey(b);
+
+    for (const [key, fieldA] of mapA) {
+      const fieldB = mapB.get(key);
+      if (!fieldB) return false;
+      if (fieldA.value !== fieldB.value) return false;
+      if ((fieldA.title ?? "") !== (fieldB.title ?? "")) return false;
+      if (JSON.stringify(fieldA.details ?? null) !== JSON.stringify(fieldB.details ?? null)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private static websitesEqual(a: Website[], b: Website[]): boolean {
+    if (a.length !== b.length) return false;
+
+    const serialize = (websites: Website[]) =>
+      [...websites]
+        .map((website) => JSON.stringify(website))
+        .sort()
+        .join("\0");
+
+    return serialize(a) === serialize(b);
+  }
+
+  private static sectionsEqual(
+    a: Item["sections"],
+    b: Item["sections"],
+  ): boolean {
+    if (a.length !== b.length) return false;
+
+    const serialize = (sections: Item["sections"]) =>
+      [...sections]
+        .map((section) => JSON.stringify(section))
+        .sort()
+        .join("\0");
+
+    return serialize(a) === serialize(b);
+  }
 }
 
 // Thin function exports preserve test and legacy import paths.
@@ -321,6 +408,14 @@ export function overlayItem(
 
 export function existingAttachmentFieldIds(item: Item): Set<string> {
   return MergeEngine.existingAttachmentFieldIds(item);
+}
+
+export function itemsEqualForMerge(a: Item, b: Item): boolean {
+  return MergeEngine.itemsEqualForMerge(a, b);
+}
+
+export function stripNonAsciiTags(item: Item): void {
+  MergeEngine.stripNonAsciiTags(item);
 }
 
 export const buildMatchIndexFromOverviews = MergeEngine.buildIndexFromOverviews;
