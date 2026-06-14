@@ -1,6 +1,7 @@
 import type {
   Item,
   ItemCategory,
+  ItemCreateParams,
   ItemField,
   ItemOverview,
   Website,
@@ -27,7 +28,7 @@ export interface MatchIndex {
 }
 
 /**
- * Resolves duplicate items during migration and merges export data into
+ * Resolves duplicate items during migration and syncs export data onto
  * existing 1Password items when the merge strategy allows it.
  */
 export class MergeEngine {
@@ -108,12 +109,12 @@ export class MergeEngine {
   }
 
   /**
-   * Choose create / merge / skip / abort based on strategy and match count.
+   * Choose create / update / skip / abort based on strategy and match count.
    *
    * | Matches | skip    | merge              | abort   |
    * |---------|---------|--------------------|---------|
    * | 0       | create  | create             | create  |
-   * | 1       | skip    | merge              | abort   |
+   * | 1       | skip    | update             | abort   |
    * | 2+      | skip    | skip (+ warn)      | abort   |
    */
   static decide(strategy: MergeStrategy, matchIds: string[]): MergeDecision {
@@ -128,7 +129,7 @@ export class MergeEngine {
         case "skip":
           return { action: "skip", targetItemId: matchIds[0] };
         case "merge":
-          return { action: "merge", targetItemId: matchIds[0] };
+          return { action: "update", targetItemId: matchIds[0] };
         case "abort":
           return { action: "abort" };
       }
@@ -144,7 +145,7 @@ export class MergeEngine {
       case "merge":
         return {
           action: "skip",
-          warning: `Multiple matches (${count}); skipping merge.`,
+          warning: `Multiple matches (${count}); skipping update.`,
         };
       case "abort":
         return {
@@ -155,39 +156,49 @@ export class MergeEngine {
   }
 
   /**
-   * Apply mapped export fields onto an existing item without removing data.
-   * Updates matching fields by id/section, appends new fields, and unions
-   * notes, tags, websites, and sections.
+   * Build the target item state from mapped export params while preserving
+   * server-managed metadata on an existing vault item.
    */
-  static overlay(
-    existing: Item,
-    mappedFields: ItemField[],
-    mappedNotes: string | undefined,
-    mappedTags: string[] | undefined,
-    mappedWebsites: Item["websites"] | undefined,
-    mappedSections: Item["sections"] | undefined,
-  ): Item {
-    MergeEngine.overlayFields(existing, mappedFields);
-    MergeEngine.overlayNotes(existing, mappedNotes);
-    MergeEngine.overlayTags(existing, mappedTags);
-    MergeEngine.overlayWebsites(existing, mappedWebsites);
-    MergeEngine.overlaySections(existing, mappedSections);
-    return existing;
+  static buildDesiredItem(existing: Item, params: ItemCreateParams): Item {
+    return {
+      ...existing,
+      title: params.title,
+      category: params.category,
+      fields: structuredClone(params.fields ?? []),
+      sections: structuredClone(params.sections ?? []),
+      notes: params.notes ?? "",
+      tags: [...(params.tags ?? [])],
+      websites: structuredClone(params.websites ?? []),
+    };
   }
 
   /**
-   * True when overlay would not change mergeable item content (fields, notes,
-   * tags, websites, sections). Used to skip SDK updates when the vault item
-   * already matches the export, including non-ASCII tags the desktop app allows.
+   * True when an existing vault item already matches the desired export state.
+   * Fields are compared strictly (order, ids, types, values). Tags match when
+   * every desired tag is present on the actual item (order ignored).
    */
-  static itemsEqualForMerge(a: Item, b: Item): boolean {
+  static itemsMatchDesired(actual: Item, desired: Item): boolean {
     return (
-      (a.notes ?? "") === (b.notes ?? "") &&
-      MergeEngine.tagsEqual(a.tags, b.tags) &&
-      MergeEngine.fieldsEqual(a.fields, b.fields) &&
-      MergeEngine.websitesEqual(a.websites, b.websites) &&
-      MergeEngine.sectionsEqual(a.sections, b.sections)
+      actual.title === desired.title &&
+      actual.category === desired.category &&
+      (actual.notes ?? "") === (desired.notes ?? "") &&
+      MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
+      MergeEngine.sectionsEqual(actual.sections, desired.sections) &&
+      MergeEngine.websitesEqual(actual.websites, desired.websites) &&
+      MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
     );
+  }
+
+  /** Replace migratable content on an existing item with the desired state. */
+  static applyDesiredContent(existing: Item, desired: Item): Item {
+    existing.title = desired.title;
+    existing.category = desired.category;
+    existing.fields = structuredClone(desired.fields);
+    existing.sections = structuredClone(desired.sections);
+    existing.notes = desired.notes;
+    existing.tags = [...desired.tags];
+    existing.websites = structuredClone(desired.websites);
+    return existing;
   }
 
   /** Remove tags the SDK rejects; desktop-created items may still carry them. */
@@ -195,7 +206,7 @@ export class MergeEngine {
     item.tags = filterSdkSafeTags(item.tags);
   }
 
-  /** Field IDs already used by attachments on an item (skip re-upload on merge). */
+  /** Field IDs already used by attachments on an item (skip re-upload on sync). */
   static existingAttachmentFieldIds(item: Item): Set<string> {
     return new Set(item.files.map((f) => f.fieldId));
   }
@@ -226,114 +237,30 @@ export class MergeEngine {
     return { index };
   }
 
-  /** Update in-place or append fields keyed by sectionId:id or bare id. */
-  private static overlayFields(existing: Item, mappedFields: ItemField[]): void {
-    const fieldByKey = new Map<string, ItemField>();
-    for (const field of existing.fields) {
-      const key = field.sectionId
-        ? `${field.sectionId}:${field.id}`
-        : field.id;
-      fieldByKey.set(key, field);
-    }
-
-    for (const field of mappedFields) {
-      const key = field.sectionId
-        ? `${field.sectionId}:${field.id}`
-        : field.id;
-      const current = fieldByKey.get(key);
-      if (current) {
-        current.value = field.value;
-        if (field.details) current.details = field.details;
-        if (field.title) current.title = field.title;
-      } else {
-        existing.fields.push({ ...field });
-      }
-    }
+  private static fieldEqual(a: ItemField, b: ItemField): boolean {
+    return (
+      a.id === b.id &&
+      a.title === b.title &&
+      a.fieldType === b.fieldType &&
+      a.value === b.value &&
+      (a.sectionId ?? undefined) === (b.sectionId ?? undefined) &&
+      JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null)
+    );
   }
 
-  /** Append export notes when they are not already present. */
-  private static overlayNotes(existing: Item, mappedNotes: string | undefined): void {
-    if (mappedNotes === undefined || mappedNotes === "") return;
-
-    const existingNotes = existing.notes?.trim() ?? "";
-    if (existingNotes && !existingNotes.includes(mappedNotes)) {
-      existing.notes = `${existingNotes}\n\n${mappedNotes}`;
-    } else if (!existingNotes) {
-      existing.notes = mappedNotes;
-    }
-  }
-
-  private static overlayTags(
-    existing: Item,
-    mappedTags: string[] | undefined,
-  ): void {
-    if (!mappedTags || mappedTags.length === 0) return;
-    const tagSet = new Set([...existing.tags, ...mappedTags]);
-    existing.tags = [...tagSet];
-  }
-
-  /** Add websites from the export without duplicating URLs. */
-  private static overlayWebsites(
-    existing: Item,
-    mappedWebsites: Item["websites"] | undefined,
-  ): void {
-    if (!mappedWebsites || mappedWebsites.length === 0) return;
-
-    const urlSet = new Set(existing.websites.map((w) => w.url));
-    for (const website of mappedWebsites) {
-      if (!urlSet.has(website.url)) {
-        existing.websites.push(website);
-        urlSet.add(website.url);
-      }
-    }
-  }
-
-  private static overlaySections(
-    existing: Item,
-    mappedSections: Item["sections"] | undefined,
-  ): void {
-    if (!mappedSections || mappedSections.length === 0) return;
-
-    const sectionIds = new Set(existing.sections.map((s) => s.id));
-    for (const section of mappedSections) {
-      if (!sectionIds.has(section.id)) {
-        existing.sections.push(section);
-        sectionIds.add(section.id);
-      }
-    }
-  }
-
-  private static fieldKey(field: ItemField): string {
-    return field.sectionId ? `${field.sectionId}:${field.id}` : field.id;
-  }
-
-  private static tagsEqual(a: readonly string[], b: readonly string[]): boolean {
+  private static fieldsEqualStrict(a: ItemField[], b: ItemField[]): boolean {
     if (a.length !== b.length) return false;
-    const sortedA = [...a].sort();
-    const sortedB = [...b].sort();
-    return sortedA.every((tag, index) => tag === sortedB[index]);
+    return a.every((field, index) =>
+      MergeEngine.fieldEqual(field, b[index]!),
+    );
   }
 
-  private static fieldsEqual(a: ItemField[], b: ItemField[]): boolean {
-    if (a.length !== b.length) return false;
-
-    const byKey = (fields: ItemField[]) =>
-      new Map(fields.map((field) => [MergeEngine.fieldKey(field), field]));
-
-    const mapA = byKey(a);
-    const mapB = byKey(b);
-
-    for (const [key, fieldA] of mapA) {
-      const fieldB = mapB.get(key);
-      if (!fieldB) return false;
-      if (fieldA.value !== fieldB.value) return false;
-      if ((fieldA.title ?? "") !== (fieldB.title ?? "")) return false;
-      if (JSON.stringify(fieldA.details ?? null) !== JSON.stringify(fieldB.details ?? null)) {
-        return false;
-      }
-    }
-
-    return true;
+  private static tagsDesiredSubsetOfActual(
+    desired: readonly string[],
+    actual: readonly string[],
+  ): boolean {
+    const actualSet = new Set(actual);
+    return desired.every((tag) => actualSet.has(tag));
   }
 
   private static websitesEqual(a: Website[], b: Website[]): boolean {
@@ -388,30 +315,23 @@ export function findMatches(
   return MergeEngine.findMatchesInIndex(matchIndex, item);
 }
 
-export function overlayItem(
+export function buildDesiredItem(
   existing: Item,
-  mappedFields: ItemField[],
-  mappedNotes: string | undefined,
-  mappedTags: string[] | undefined,
-  mappedWebsites: Item["websites"] | undefined,
-  mappedSections: Item["sections"] | undefined,
+  params: ItemCreateParams,
 ): Item {
-  return MergeEngine.overlay(
-    existing,
-    mappedFields,
-    mappedNotes,
-    mappedTags,
-    mappedWebsites,
-    mappedSections,
-  );
+  return MergeEngine.buildDesiredItem(existing, params);
+}
+
+export function itemsMatchDesired(actual: Item, desired: Item): boolean {
+  return MergeEngine.itemsMatchDesired(actual, desired);
+}
+
+export function applyDesiredContent(existing: Item, desired: Item): Item {
+  return MergeEngine.applyDesiredContent(existing, desired);
 }
 
 export function existingAttachmentFieldIds(item: Item): Set<string> {
   return MergeEngine.existingAttachmentFieldIds(item);
-}
-
-export function itemsEqualForMerge(a: Item, b: Item): boolean {
-  return MergeEngine.itemsEqualForMerge(a, b);
 }
 
 export function stripNonAsciiTags(item: Item): void {

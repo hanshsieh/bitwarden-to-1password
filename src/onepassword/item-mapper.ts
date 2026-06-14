@@ -42,9 +42,9 @@ export class OnePasswordItemMapper {
    * Convert one Bitwarden cipher into 1Password {@link ItemCreateParams}.
    *
    * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
-   * omitted because the 1Password SDK rejects them as tags. Custom
-   * fields land in a dedicated section. Attachment metadata is returned separately
-   * for upload after create.
+   * omitted because the 1Password SDK rejects them as tags. Custom fields use
+   * indexed IDs (`cust_0`, …) with no section. Attachment metadata is returned
+   * separately for upload after create.
    */
   map(
     item: ParsedBitwardenItem,
@@ -59,6 +59,8 @@ export class OnePasswordItemMapper {
     const customFields = (item.fields ?? [])
       .filter((field) => field.type !== 3)
       .map((field, index) => this.mapCustomField(field, index));
+
+    let customFieldCount = customFields.length;
 
     let builtinFields: ItemField[] = [];
     let notes = item.notes ?? "";
@@ -77,7 +79,7 @@ export class OnePasswordItemMapper {
         builtinFields = this.mapCardFields(item);
         break;
       case 4: {
-        const { builtin, extra } = this.mapIdentityFields(item);
+        const { builtin, extra } = this.mapIdentityFields(item, customFieldCount);
         builtinFields = builtin;
         customFields.push(...extra);
         break;
@@ -89,7 +91,6 @@ export class OnePasswordItemMapper {
 
     const hasSshKey = item.type === 5 && Boolean(item.sshKey?.privateKey);
     const sections = this.buildSections(
-      customFields,
       attachments.length > 0,
       hasSshKey,
     );
@@ -259,7 +260,10 @@ export class OnePasswordItemMapper {
    * Map identity built-in fields and push unmapped Bitwarden fields into custom
    * section (title, middle name, SSN, passport, license).
    */
-  private mapIdentityFields(item: ParsedBitwardenItem): {
+  private mapIdentityFields(
+    item: ParsedBitwardenItem,
+    customFieldStartIndex: number,
+  ): {
     builtin: ItemField[];
     extra: ItemField[];
   } {
@@ -301,15 +305,16 @@ export class OnePasswordItemMapper {
       ["License number", identity.licenseNumber],
     ];
 
+    let customIndex = customFieldStartIndex;
     for (const [label, value] of unmapped) {
       if (value != null && value.trim() !== "") {
         extra.push({
-          id: slugify(label),
+          id: `cust_${customIndex}`,
           title: label,
-          sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
           fieldType: ItemFieldType.Text,
           value: value.trim(),
         });
+        customIndex++;
       }
     }
 
@@ -370,7 +375,7 @@ export class OnePasswordItemMapper {
     field: BitwardenCustomField,
     index: number,
   ): ItemField {
-    const id = slugify(field.name) || `custom_${index}`;
+    const id = `cust_${index}`;
     let fieldType = ItemFieldType.Text;
     let value = field.value ?? "";
     let title = field.name;
@@ -391,7 +396,6 @@ export class OnePasswordItemMapper {
     return {
       id,
       title,
-      sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
       fieldType,
       value,
     };
@@ -411,7 +415,6 @@ export class OnePasswordItemMapper {
   }
 
   private buildSections(
-    customFields: ItemField[],
     hasAttachments: boolean,
     hasSshKey: boolean,
   ): ItemSection[] {
@@ -421,13 +424,6 @@ export class OnePasswordItemMapper {
       sections.push({
         id: OnePasswordItemMapper.SSH_KEYS_SECTION_ID,
         title: "Keys",
-      });
-    }
-
-    if (customFields.length > 0) {
-      sections.push({
-        id: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
-        title: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_TITLE,
       });
     }
 

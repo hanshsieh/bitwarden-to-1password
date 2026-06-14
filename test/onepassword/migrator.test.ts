@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
 import { migrate } from "../../src/onepassword/migrator.js";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
+import { mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
@@ -20,7 +21,7 @@ describe("migrator", () => {
     });
 
     assert.equal(summary.created, 5);
-    assert.equal(summary.merged, 0);
+    assert.equal(summary.updated, 0);
     assert.equal(summary.skipped, 0);
     assert.equal(summary.failed, 0);
     assert.equal(summary.aborted, false);
@@ -85,7 +86,7 @@ describe("migrator", () => {
     assert.equal(state.createCalls.length, 0);
   });
 
-  it("merges into a single matching item", async () => {
+  it("updates a single matching item to match the export", async () => {
     const parsed = parseExport(FIXTURES);
     const login = parsed.items.find((i) => i.type === 1)!;
 
@@ -102,52 +103,43 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.merged, 1);
+    assert.equal(summary.updated, 1);
     assert.equal(summary.created, 4);
     assert.equal(state.putCalls.length, 1);
   });
 
-  it("skips merge update when existing item already matches export", async () => {
+  it("skips update when existing item already matches export", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    const exportItem = {
+      type: 1 as const,
+      name: "Synced Login",
+      login: {
+        username: "user@example.com",
+        password: "secret",
+        uris: [{ uri: "https://example.com" }],
+      },
+      notes: "Already synced",
+    };
     writeFileSync(
       join(dir, "data.json"),
       JSON.stringify({
         encrypted: false,
-        items: [
-          {
-            type: 1,
-            name: "Synced Login",
-            login: {
-              username: "user@example.com",
-              password: "secret",
-              uris: [{ uri: "https://example.com" }],
-            },
-            notes: "Already synced",
-          },
-        ],
+        items: [exportItem],
       }),
     );
 
+    const exportData = parseExport(dir);
+    const mapped = mapItem(exportData.items[0]!, exportData, "vault-1");
     const existing = makeLoginItem(
       "existing-1",
       "Synced Login",
       "user@example.com",
     );
-    existing.notes = "Already synced";
+    existing.notes = mapped.params.notes ?? "";
     existing.tags = ["雲端空間"];
-    existing.websites = [
-      {
-        url: "https://example.com",
-        label: "website",
-        autofillBehavior: "AnywhereOnWebsite" as const,
-      },
-    ];
-    existing.fields.push({
-      id: "password",
-      title: "password",
-      fieldType: 1,
-      value: "secret",
-    });
+    existing.websites = mapped.params.websites ?? [];
+    existing.fields = mapped.params.fields ?? [];
+    existing.sections = mapped.params.sections ?? [];
 
     const { client, state } = createMockClient({ items: [existing] });
     const summary = await migrate(client, {
@@ -157,7 +149,7 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.merged, 0);
+    assert.equal(summary.updated, 0);
     assert.equal(summary.unchanged, 1);
     assert.equal(summary.failed, 0);
     assert.equal(state.putCalls.length, 0);
@@ -165,7 +157,7 @@ describe("migrator", () => {
     assert.deepEqual(summary.nonAsciiTagsSkipped, []);
   });
 
-  it("strips non-ASCII tags when merge update is required", async () => {
+  it("overwrites item content when update is required", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(
       join(dir, "data.json"),
@@ -215,11 +207,11 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.merged, 1);
+    assert.equal(summary.updated, 1);
     assert.equal(summary.failed, 0);
     assert.equal(state.putCalls.length, 1);
     assert.deepEqual(state.items.get("existing-1")?.tags, ["Work"]);
-    assert.deepEqual(summary.nonAsciiTagsSkipped, ["Needs Tag"]);
+    assert.deepEqual(summary.nonAsciiTagsSkipped, []);
   });
 
   it("reports items with FIDO2 credentials in summary", async () => {

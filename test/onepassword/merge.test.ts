@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { ItemCategory } from "@1password/sdk";
+import { ItemCategory, ItemFieldType } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
+  applyDesiredContent,
+  buildDesiredItem,
   buildMatchIndex,
   buildMatchKey,
   decideMergeAction,
-  itemsEqualForMerge,
-  overlayItem,
+  itemsMatchDesired,
   stripNonAsciiTags,
 } from "../../src/onepassword/merge-engine.js";
 import { mapItem } from "../../src/onepassword/item-mapper.js";
@@ -41,7 +42,7 @@ describe("merge engine", () => {
       targetItemId: "a",
     });
     assert.deepEqual(decideMergeAction("merge", ["a"]), {
-      action: "merge",
+      action: "update",
       targetItemId: "a",
     });
     assert.deepEqual(decideMergeAction("abort", ["a"]), { action: "abort" });
@@ -51,40 +52,80 @@ describe("merge engine", () => {
     assert.match(multi.warning ?? "", /Multiple matches/);
   });
 
-  it("overlayItem merges notes, tags, and websites", () => {
+  it("itemsMatchDesired compares fields strictly including order and ids", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
       "user@example.com",
     );
-    existing.notes = "Existing notes";
-    existing.tags = ["Old"];
-
     const mapped = mapItem(loginItem, parsed, "vault-1");
-    const merged = overlayItem(
-      existing,
-      mapped.params.fields ?? [],
-      mapped.params.notes,
-      mapped.params.tags,
-      mapped.params.websites,
-      mapped.params.sections,
-    );
+    const desired = buildDesiredItem(existing, mapped.params);
 
-    assert.match(merged.notes, /Existing notes/);
-    assert.match(merged.notes, /Login notes/);
-    assert.ok(merged.tags.includes("Work"));
-    assert.ok(merged.websites.some((w) => w.url === "https://example.com"));
-    assert.ok(
-      merged.websites.some((w) => w.url === "https://existing.example.com"),
-    );
+    assert.equal(itemsMatchDesired(existing, desired), false);
+
+    const synced = applyDesiredContent(structuredClone(existing), desired);
+    assert.equal(itemsMatchDesired(synced, desired), true);
+
+    const reordered = structuredClone(synced);
+    reordered.fields.reverse();
+    assert.equal(itemsMatchDesired(reordered, desired), false);
+
+    const differentId = structuredClone(synced);
+    differentId.fields[0] = { ...differentId.fields[0]!, id: "other" };
+    assert.equal(itemsMatchDesired(differentId, desired), false);
   });
 
-  it("itemsEqualForMerge ignores tag order", () => {
-    const a = makeLoginItem("a", "Login", "user@example.com");
-    const b = structuredClone(a);
-    a.tags = ["Beta", "Alpha"];
-    b.tags = ["Alpha", "Beta"];
-    assert.equal(itemsEqualForMerge(a, b), true);
+  it("itemsMatchDesired treats desired tags as a subset of actual tags", () => {
+    const existing = makeLoginItem("a", "Login", "user@example.com");
+    const desired = buildDesiredItem(existing, {
+      category: ItemCategory.Login,
+      vaultId: "vault-1",
+      title: "Login",
+      tags: ["Work"],
+    });
+
+    existing.tags = ["Extra"];
+    assert.equal(itemsMatchDesired(existing, desired), false);
+
+    existing.fields = desired.fields;
+    existing.websites = desired.websites;
+    existing.notes = desired.notes;
+    existing.sections = desired.sections;
+    existing.tags = ["Work", "Extra"];
+    assert.equal(itemsMatchDesired(existing, desired), true);
+
+    existing.tags = ["Work", "雲端空間"];
+    assert.equal(itemsMatchDesired(existing, desired), true);
+  });
+
+  it("applyDesiredContent overwrites migratable fields", () => {
+    const existing = makeLoginItem(
+      "existing-1",
+      "Example Login",
+      "user@example.com",
+    );
+    existing.notes = "Old notes";
+    existing.tags = ["Old"];
+    existing.fields.push({
+      id: "cust_0",
+      title: "Secret PIN",
+      fieldType: ItemFieldType.Concealed,
+      value: "9999",
+    });
+
+    const mapped = mapItem(loginItem, parsed, "vault-1");
+    const desired = buildDesiredItem(existing, mapped.params);
+    const updated = applyDesiredContent(structuredClone(existing), desired);
+
+    assert.equal(updated.notes, "Login notes");
+    assert.deepEqual(updated.tags, ["Work"]);
+    assert.equal(
+      updated.fields.find((f) => f.id === "cust_1")?.value,
+      "1234",
+    );
+    assert.ok(
+      !updated.websites.some((w) => w.url === "https://existing.example.com"),
+    );
   });
 
   it("stripNonAsciiTags keeps only ASCII tags", () => {

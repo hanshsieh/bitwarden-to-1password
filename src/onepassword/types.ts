@@ -45,7 +45,7 @@ export interface OnePasswordClient {
 export type MergeStrategy = "skip" | "merge" | "abort";
 
 /** Outcome of evaluating one export item against the match index. */
-export type MergeAction = "create" | "merge" | "skip" | "abort";
+export type MergeAction = "create" | "update" | "skip" | "abort";
 
 export interface MergeDecision {
   action: MergeAction;
@@ -56,8 +56,9 @@ export interface MergeDecision {
 /** Counters collected during a migration run. */
 export interface MigrationSummary {
   created: number;
-  merged: number;
-  /** Merge matches where the vault item already matched the export. */
+  /** Existing vault items overwritten to match the export. */
+  updated: number;
+  /** Matched items that already matched the desired export state. */
   unchanged: number;
   skipped: number;
   failed: number;

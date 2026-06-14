@@ -10,7 +10,6 @@ import {
 } from "../bitwarden/types.js";
 import {
   hasNonAsciiBitwardenLabels,
-  tagsNeedSdkStripping,
 } from "./tags.js";
 import {
   ATTACHMENTS_SECTION_ID,
@@ -36,7 +35,7 @@ export interface MigrateOptions {
  * Orchestrates a full Bitwarden export → 1Password vault migration.
  *
  * Composes an export parser, item mapper, attachment scanner, and merge engine.
- * Each export item is mapped, checked for duplicates, then created or merged.
+ * Each export item is mapped, checked for duplicates, then created or synced.
  * Attachments are uploaded after the parent item exists in 1Password.
  */
 export class Migrator {
@@ -137,7 +136,7 @@ export class Migrator {
         summary.created++;
         this.recordNonAsciiTagsSkippedForExport(item, exportData, summary);
       }
-      if (decision.action === "merge") summary.merged++;
+      if (decision.action === "update") summary.updated++;
       return;
     }
 
@@ -151,9 +150,10 @@ export class Migrator {
           attachmentScanner,
           summary,
         );
-      } else if (decision.action === "merge" && decision.targetItemId) {
-        await this.mergeItem(
+      } else if (decision.action === "update" && decision.targetItemId) {
+        await this.updateItem(
           item,
+          exportData,
           options.vaultId,
           decision.targetItemId,
           mapped,
@@ -194,8 +194,9 @@ export class Migrator {
     );
   }
 
-  private async mergeItem(
+  private async updateItem(
     sourceItem: ParsedBitwardenExport["items"][number],
+    exportData: ParsedBitwardenExport,
     vaultId: string,
     targetItemId: string,
     mapped: MappedItem,
@@ -203,24 +204,20 @@ export class Migrator {
     summary: MigrationSummary,
   ): Promise<void> {
     const existing = await this.client.items.get(vaultId, targetItemId);
-    const merged = MergeEngine.overlay(
-      structuredClone(existing),
-      mapped.params.fields ?? [],
-      mapped.params.notes,
-      mapped.params.tags,
-      mapped.params.websites,
-      mapped.params.sections,
-    );
+    const desired = MergeEngine.buildDesiredItem(existing, mapped.params);
 
     let current = existing;
-    if (!MergeEngine.itemsEqualForMerge(existing, merged)) {
-      if (tagsNeedSdkStripping(merged.tags)) {
+    if (!MergeEngine.itemsMatchDesired(existing, desired)) {
+      if (hasNonAsciiBitwardenLabels(sourceItem, exportData)) {
         this.recordNonAsciiTagsSkipped(summary, sourceItem.name);
       }
-      MergeEngine.stripNonAsciiTags(merged);
-      current = await this.client.items.put(merged);
-      summary.merged++;
-      console.log(`merged: ${sourceItem.name} (${current.id})`);
+      const toWrite = MergeEngine.applyDesiredContent(
+        structuredClone(existing),
+        desired,
+      );
+      current = await this.client.items.put(toWrite);
+      summary.updated++;
+      console.log(`updated: ${sourceItem.name} (${current.id})`);
     } else {
       summary.unchanged++;
       console.log(`unchanged: ${sourceItem.name} (${existing.id})`);
@@ -231,7 +228,7 @@ export class Migrator {
       mapped,
       attachmentScanner,
       summary,
-      MergeEngine.existingAttachmentFieldIds(existing),
+      MergeEngine.existingAttachmentFieldIds(current),
     );
     await this.applyArchivedState(
       vaultId,
@@ -309,7 +306,7 @@ export class Migrator {
   }
 
   private logDryRunAction(
-    action: "create" | "merge",
+    action: "create" | "update",
     item: ParsedBitwardenExport["items"][number],
     attachments: MappedItem["attachments"],
   ): void {
@@ -362,7 +359,7 @@ export class Migrator {
   private emptySummary(): MigrationSummary {
     return {
       created: 0,
-      merged: 0,
+      updated: 0,
       unchanged: 0,
       skipped: 0,
       failed: 0,
@@ -383,7 +380,7 @@ export class Migrator {
     console.log(
       formatCountTable(`${prefix}Summary`, [
         { label: "Created", value: summary.created },
-        { label: "Merged", value: summary.merged },
+        { label: "Updated", value: summary.updated },
         { label: "Unchanged", value: summary.unchanged },
         { label: "Skipped", value: summary.skipped },
         { label: "Failed", value: summary.failed },
