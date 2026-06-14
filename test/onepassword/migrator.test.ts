@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
 import { ItemCategory, ItemFieldType } from "@1password/sdk";
 import { migrate } from "../../src/onepassword/migrator.js";
-import { ATTACHMENTS_SECTION_ID } from "../../src/onepassword/item-mapper.js";
+import {
+  ATTACHMENTS_SECTION_ID,
+  ATTACHMENTS_SECTION_TITLE,
+} from "../../src/onepassword/item-mapper.js";
 import { attachmentFieldId } from "../../src/utils/attachment-field-id.js";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import { mapItem } from "../../src/onepassword/item-mapper.js";
@@ -403,6 +406,12 @@ describe("migrator", () => {
     existing.category = ItemCategory.SecureNote;
     existing.fields = [];
     existing.websites = [];
+    existing.sections = [
+      {
+        id: ATTACHMENTS_SECTION_ID,
+        title: ATTACHMENTS_SECTION_TITLE,
+      },
+    ];
     existing.files = [
       {
         attributes: {
@@ -460,6 +469,12 @@ describe("migrator", () => {
     existing.category = ItemCategory.SecureNote;
     existing.fields = [];
     existing.websites = [];
+    existing.sections = [
+      {
+        id: ATTACHMENTS_SECTION_ID,
+        title: ATTACHMENTS_SECTION_TITLE,
+      },
+    ];
     existing.files = [
       {
         attributes: {
@@ -548,6 +563,12 @@ describe("migrator", () => {
     existing.category = ItemCategory.SecureNote;
     existing.fields = [];
     existing.websites = [];
+    existing.sections = [
+      {
+        id: ATTACHMENTS_SECTION_ID,
+        title: ATTACHMENTS_SECTION_TITLE,
+      },
+    ];
     existing.files = [
       {
         attributes: {

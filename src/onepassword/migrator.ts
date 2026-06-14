@@ -219,6 +219,8 @@ export class Migrator {
     const filesMatch = MergeEngine.filesMatchExpected(
       existing.files,
       expectedFiles,
+      existing.sections,
+      desired.sections,
     );
 
     if (!fieldContentMatches) {

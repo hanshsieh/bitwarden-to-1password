@@ -5,6 +5,7 @@ import type {
   ItemField,
   ItemFile,
   ItemOverview,
+  ItemSection,
   Website,
 } from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
@@ -202,7 +203,12 @@ export class MergeEngine {
       actual.title === desired.title &&
       actual.category === desired.category &&
       (actual.notes ?? "") === (desired.notes ?? "") &&
-      MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
+      MergeEngine.fieldsEqualStrict(
+        actual.fields,
+        desired.fields,
+        actual.sections,
+        desired.sections,
+      ) &&
       MergeEngine.websitesEqual(actual.websites, desired.websites) &&
       MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
     );
@@ -210,16 +216,22 @@ export class MergeEngine {
 
   /**
    * True when an existing vault item already matches the desired export state.
-   * Fields are compared strictly (order, ids, types, values). Field sectionId
-   * is ignored because 1Password may assign sections on save. Tags match when
-   * every desired tag is present on the actual item (order ignored). Files match
+   * Fields are compared strictly (order, ids, types, values). Field and file
+   * section membership is compared by section title (not sectionId) because
+   * 1Password may assign different section ids on save. Tags match when every
+   * desired tag is present on the actual item (order ignored). Files match
    * when counts are equal and each pair of corresponding entries shares the same
-   * fieldId (sectionId is ignored).
+   * fieldId and section title.
    */
   static itemsMatchDesired(actual: Item, desired: Item): boolean {
     return (
       MergeEngine.itemContentMatchesDesired(actual, desired) &&
-      MergeEngine.filesEqual(actual.files, desired.files)
+      MergeEngine.filesEqual(
+        actual.files,
+        desired.files,
+        actual.sections,
+        desired.sections,
+      )
     );
   }
 
@@ -271,20 +283,45 @@ export class MergeEngine {
     return { index };
   }
 
-  private static fieldEqual(a: ItemField, b: ItemField): boolean {
+  private static sectionTitle(
+    sections: ItemSection[],
+    sectionId?: string,
+  ): string {
+    if (!sectionId) return "";
+    return sections.find((section) => section.id === sectionId)?.title ?? "";
+  }
+
+  private static fieldEqual(
+    a: ItemField,
+    b: ItemField,
+    actualSections: ItemSection[],
+    desiredSections: ItemSection[],
+  ): boolean {
     return (
       a.id === b.id &&
       a.title === b.title &&
       a.fieldType === b.fieldType &&
       a.value === b.value &&
-      JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null)
+      JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null) &&
+      MergeEngine.sectionTitle(actualSections, a.sectionId) ===
+        MergeEngine.sectionTitle(desiredSections, b.sectionId)
     );
   }
 
-  private static fieldsEqualStrict(a: ItemField[], b: ItemField[]): boolean {
+  private static fieldsEqualStrict(
+    a: ItemField[],
+    b: ItemField[],
+    actualSections: ItemSection[],
+    desiredSections: ItemSection[],
+  ): boolean {
     if (a.length !== b.length) return false;
     return a.every((field, index) =>
-      MergeEngine.fieldEqual(field, b[index]!),
+      MergeEngine.fieldEqual(
+        field,
+        b[index]!,
+        actualSections,
+        desiredSections,
+      ),
     );
   }
 
@@ -309,11 +346,26 @@ export class MergeEngine {
   }
 
   /** Compare actual item files to the expected export attachment field IDs. */
-  static filesMatchExpected(actual: ItemFile[], expected: ItemFile[]): boolean {
-    return MergeEngine.filesEqual(actual, expected);
+  static filesMatchExpected(
+    actual: ItemFile[],
+    expected: ItemFile[],
+    actualSections: ItemSection[],
+    expectedSections: ItemSection[],
+  ): boolean {
+    return MergeEngine.filesEqual(
+      actual,
+      expected,
+      actualSections,
+      expectedSections,
+    );
   }
 
-  private static filesEqual(a: ItemFile[], b: ItemFile[]): boolean {
+  private static filesEqual(
+    a: ItemFile[],
+    b: ItemFile[],
+    actualSections: ItemSection[],
+    desiredSections: ItemSection[],
+  ): boolean {
     if (a.length !== b.length) return false;
 
     const byFieldId = (files: ItemFile[]) =>
@@ -324,7 +376,10 @@ export class MergeEngine {
     const actual = byFieldId(a);
     const desired = byFieldId(b);
     return actual.every(
-      (file, index) => file.fieldId === desired[index]!.fieldId,
+      (file, index) =>
+        file.fieldId === desired[index]!.fieldId &&
+        MergeEngine.sectionTitle(actualSections, file.sectionId) ===
+          MergeEngine.sectionTitle(desiredSections, desired[index]!.sectionId),
     );
   }
 }
@@ -376,8 +431,15 @@ export function itemContentMatchesDesired(actual: Item, desired: Item): boolean 
 export function filesMatchExpected(
   actual: ItemFile[],
   expected: ItemFile[],
+  actualSections: ItemSection[],
+  expectedSections: ItemSection[],
 ): boolean {
-  return MergeEngine.filesMatchExpected(actual, expected);
+  return MergeEngine.filesMatchExpected(
+    actual,
+    expected,
+    actualSections,
+    expectedSections,
+  );
 }
 
 export function applyDesiredContent(existing: Item, desired: Item): Item {

@@ -13,7 +13,7 @@ import {
   itemsMatchDesired,
   stripNonAsciiTags,
 } from "../../src/onepassword/merge-engine.js";
-import { ATTACHMENTS_SECTION_ID, mapItem } from "../../src/onepassword/item-mapper.js";
+import { ATTACHMENTS_SECTION_ID, ATTACHMENTS_SECTION_TITLE, CUSTOM_FIELDS_SECTION_TITLE, mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
@@ -80,7 +80,7 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(differentId, desired), false);
   });
 
-  it("itemsMatchDesired ignores field sectionId differences", () => {
+  it("itemsMatchDesired matches fields in different sections when section titles match", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
@@ -94,6 +94,11 @@ describe("merge engine", () => {
     );
     const synced = applyDesiredContent(structuredClone(existing), desired);
 
+    synced.sections = (synced.sections ?? []).map((section) =>
+      section.title === CUSTOM_FIELDS_SECTION_TITLE
+        ? { ...section, id: "section_auto" }
+        : section,
+    );
     synced.fields = synced.fields.map((field) =>
       field.id.startsWith("cust_")
         ? { ...field, sectionId: "section_auto" }
@@ -101,6 +106,29 @@ describe("merge engine", () => {
     );
 
     assert.equal(itemsMatchDesired(synced, desired), true);
+  });
+
+  it("itemsMatchDesired rejects fields with different section titles", () => {
+    const existing = makeLoginItem(
+      "existing-1",
+      "Example Login",
+      "user@example.com",
+    );
+    const mapped = mapItem(loginItem, parsed, "vault-1");
+    const desired = buildDesiredItem(
+      existing,
+      mapped.params,
+      expectedFilesFromMapped(mapped),
+    );
+    const synced = applyDesiredContent(structuredClone(existing), desired);
+
+    synced.sections = (synced.sections ?? []).map((section) =>
+      section.title === CUSTOM_FIELDS_SECTION_TITLE
+        ? { ...section, title: "Other" }
+        : section,
+    );
+
+    assert.equal(itemsMatchDesired(synced, desired), false);
   });
 
   it("itemsMatchDesired treats desired tags as a subset of actual tags", () => {
@@ -126,7 +154,7 @@ describe("merge engine", () => {
     assert.equal(itemsMatchDesired(existing, desired), true);
   });
 
-  it("itemsMatchDesired compares attachment field IDs and ignores sectionId", () => {
+  it("itemsMatchDesired compares attachment field IDs and section titles", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
@@ -138,6 +166,12 @@ describe("merge engine", () => {
         category: ItemCategory.Login,
         vaultId: "vault-1",
         title: "Example Login",
+        sections: [
+          {
+            id: ATTACHMENTS_SECTION_ID,
+            title: ATTACHMENTS_SECTION_TITLE,
+          },
+        ],
       },
       [
         {
@@ -155,6 +189,12 @@ describe("merge engine", () => {
     existing.files = [];
     assert.equal(itemsMatchDesired(existing, desired), false);
 
+    existing.sections = [
+      {
+        id: "other_section",
+        title: ATTACHMENTS_SECTION_TITLE,
+      },
+    ];
     existing.files = [
       {
         attributes: { id: "file-1", name: "readme.txt", size: 5 },
@@ -164,6 +204,16 @@ describe("merge engine", () => {
     ];
     assert.equal(itemsMatchDesired(existing, desired), true);
 
+    existing.sections[0] = {
+      id: "other_section",
+      title: "Other",
+    };
+    assert.equal(itemsMatchDesired(existing, desired), false);
+
+    existing.sections[0] = {
+      id: "other_section",
+      title: ATTACHMENTS_SECTION_TITLE,
+    };
     existing.files.push({
       attributes: { id: "file-2", name: "extra.txt", size: 1 },
       sectionId: ATTACHMENTS_SECTION_ID,
