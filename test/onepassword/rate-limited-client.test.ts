@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import type { ItemsGetAllResponse } from "@1password/sdk";
 import {
   OP_ITEMS_GET_ALL_BATCH_SIZE,
@@ -55,8 +54,8 @@ describe("rate-limited-client", () => {
 
     await client.items.getAll("vault-1", itemIds);
 
-    assert.equal(batches.length, 2);
-    assert.equal(batches[0]?.length, OP_ITEMS_GET_ALL_BATCH_SIZE);
-    assert.equal(batches[1]?.length, 25);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toHaveLength(OP_ITEMS_GET_ALL_BATCH_SIZE);
+    expect(batches[1]).toHaveLength(25);
   });
 });

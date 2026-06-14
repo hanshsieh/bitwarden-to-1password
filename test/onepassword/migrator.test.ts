@@ -1,24 +1,31 @@
-import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import { AutofillBehavior, ItemCategory, ItemFieldType } from "@1password/sdk";
-import { migrate } from "../../src/onepassword/migrator.js";
+import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
   ATTACHMENTS_SECTION_ID,
   ATTACHMENTS_SECTION_TITLE,
+  OnePasswordItemMapper,
 } from "../../src/onepassword/item-mapper.js";
+import { Migrator } from "../../src/onepassword/migrator.js";
 import { attachmentFieldId } from "../../src/utils/attachment-field-id.js";
-import { parseExport } from "../../src/bitwarden/export-parser.js";
-import { mapItem } from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
+const mapper = new OnePasswordItemMapper();
+
+async function migrate(
+  client: ReturnType<typeof createMockClient>["client"],
+  options: Parameters<Migrator["migrate"]>[0],
+) {
+  return new Migrator(client).migrate(options);
+}
 
 describe("migrator", () => {
   it("dry-run reports planned creates without SDK writes", async () => {
-    const { client, state } = createMockClient();
+    const { client } = createMockClient();
     const summary = await migrate(client, {
       bwDir: FIXTURES,
       vaultId: "vault-1",
@@ -26,16 +33,16 @@ describe("migrator", () => {
       dryRun: true,
     });
 
-    assert.equal(summary.created, 5);
-    assert.equal(summary.updated, 0);
-    assert.equal(summary.skipped, 0);
-    assert.equal(summary.failed, 0);
-    assert.equal(summary.aborted, false);
-    assert.equal(state.createCalls.length, 0);
+    expect(summary.created).toBe(5);
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.aborted).toBe(false);
+    expect(client.items.create).not.toHaveBeenCalled();
   });
 
   it("creates items when no matches exist", async () => {
-    const { client, state } = createMockClient();
+    const { client } = createMockClient();
     const summary = await migrate(client, {
       bwDir: FIXTURES,
       vaultId: "vault-1",
@@ -43,16 +50,16 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 5);
-    assert.equal(summary.failed, 0);
-    assert.equal(state.createCalls.length, 5);
+    expect(summary.created).toBe(5);
+    expect(summary.failed).toBe(0);
+    expect(client.items.create).toHaveBeenCalledTimes(5);
   });
 
   it("skips matching items with skip strategy", async () => {
     const parsed = parseExport(FIXTURES);
     const login = parsed.items.find((i) => i.type === 1)!;
 
-    const { client, state } = createMockClient({
+    const { client } = createMockClient({
       items: [
         makeLoginItem("existing-1", login.name, login.login?.username ?? ""),
       ],
@@ -65,16 +72,16 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.skipped, 1);
-    assert.equal(summary.created, 4);
-    assert.equal(state.createCalls.length, 4);
+    expect(summary.skipped).toBe(1);
+    expect(summary.created).toBe(4);
+    expect(client.items.create).toHaveBeenCalledTimes(4);
   });
 
   it("aborts when a match exists and strategy is abort", async () => {
     const parsed = parseExport(FIXTURES);
     const login = parsed.items.find((i) => i.type === 1)!;
 
-    const { client, state } = createMockClient({
+    const { client } = createMockClient({
       items: [
         makeLoginItem("existing-1", login.name, login.login?.username ?? ""),
       ],
@@ -87,16 +94,16 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.aborted, true);
-    assert.equal(summary.created, 0);
-    assert.equal(state.createCalls.length, 0);
+    expect(summary.aborted).toBe(true);
+    expect(summary.created).toBe(0);
+    expect(client.items.create).not.toHaveBeenCalled();
   });
 
   it("updates a single matching item to match the export", async () => {
     const parsed = parseExport(FIXTURES);
     const login = parsed.items.find((i) => i.type === 1)!;
 
-    const { client, state } = createMockClient({
+    const { client } = createMockClient({
       items: [
         makeLoginItem("existing-1", login.name, login.login?.username ?? ""),
       ],
@@ -109,9 +116,9 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.updated, 1);
-    assert.equal(summary.created, 4);
-    assert.equal(state.putCalls.length, 1);
+    expect(summary.updated).toBe(1);
+    expect(summary.created).toBe(4);
+    expect(client.items.put).toHaveBeenCalledTimes(1);
   });
 
   it("skips update when existing item already matches export", async () => {
@@ -135,7 +142,7 @@ describe("migrator", () => {
     );
 
     const exportData = parseExport(dir);
-    const mapped = mapItem(exportData.items[0]!, exportData, "vault-1");
+    const mapped = mapper.map(exportData.items[0]!, exportData, "vault-1");
     const existing = makeLoginItem(
       "existing-1",
       "Synced Login",
@@ -155,13 +162,13 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.updated, 0);
-    assert.equal(summary.unchanged, 1);
-    assert.equal(summary.failed, 0);
-    assert.equal(state.putCalls.length, 0);
-    assert.equal(state.getCalls.length, 0);
-    assert.deepEqual(state.items.get("existing-1")?.tags, ["雲端空間"]);
-    assert.deepEqual(summary.nonAsciiTagsSkipped, []);
+    expect(summary.updated).toBe(0);
+    expect(summary.unchanged).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(client.items.put).not.toHaveBeenCalled();
+    expect(client.items.get).not.toHaveBeenCalled();
+    expect(state.items.get("existing-1")?.tags).toEqual(["雲端空間"]);
+    expect(summary.nonAsciiTagsSkipped).toEqual([]);
   });
 
   it("overwrites item content when update is required", async () => {
@@ -214,11 +221,11 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.updated, 1);
-    assert.equal(summary.failed, 0);
-    assert.equal(state.putCalls.length, 1);
-    assert.deepEqual(state.items.get("existing-1")?.tags, ["Work"]);
-    assert.deepEqual(summary.nonAsciiTagsSkipped, []);
+    expect(summary.updated).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(client.items.put).toHaveBeenCalledTimes(1);
+    expect(state.items.get("existing-1")?.tags).toEqual(["Work"]);
+    expect(summary.nonAsciiTagsSkipped).toEqual([]);
   });
 
   it("reports items with FIDO2 credentials in summary", async () => {
@@ -260,8 +267,8 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 2);
-    assert.deepEqual(summary.fidoCredentialsSkipped, ["Passkey Login"]);
+    expect(summary.created).toBe(2);
+    expect(summary.fidoCredentialsSkipped).toEqual(["Passkey Login"]);
   });
 
   it("reports items with linked custom fields in summary", async () => {
@@ -297,8 +304,8 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 2);
-    assert.deepEqual(summary.linkedFieldsSkipped, ["Bank Login"]);
+    expect(summary.created).toBe(2);
+    expect(summary.linkedFieldsSkipped).toEqual(["Bank Login"]);
   });
 
   it("reports items with non-ASCII folder labels in summary", async () => {
@@ -331,8 +338,8 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 1);
-    assert.deepEqual(summary.nonAsciiTagsSkipped, ["adrive"]);
+    expect(summary.created).toBe(1);
+    expect(summary.nonAsciiTagsSkipped).toEqual(["adrive"]);
   });
 
   it("reports items with regex URLs in summary", async () => {
@@ -373,8 +380,8 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 2);
-    assert.deepEqual(summary.regexUrlItems, ["Regex Login"]);
+    expect(summary.created).toBe(2);
+    expect(summary.regexUrlItems).toEqual(["Regex Login"]);
   });
 
   it("replaces all attachments when file field IDs differ", async () => {
@@ -425,7 +432,7 @@ describe("migrator", () => {
       },
     ];
 
-    const { client, state } = createMockClient({ items: [existing] });
+    const { client } = createMockClient({ items: [existing] });
     const summary = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
@@ -433,16 +440,21 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.updated, 1);
-    assert.equal(summary.attachmentsUploaded, 2);
-    assert.equal(state.deleteFileCalls.length, 1);
-    assert.equal(state.attachCalls.length, 2);
-    assert.deepEqual(
-      state.attachCalls.map((call) => call.name).sort(),
-      ["身分證正面.jpg", "身分證背面.jpg"],
+    expect(summary.updated).toBe(1);
+    expect(summary.attachmentsUploaded).toBe(2);
+    expect(client.items.files.delete).toHaveBeenCalledTimes(1);
+    expect(client.items.files.attach).toHaveBeenCalledTimes(2);
+    expect(
+      client.items.files.attach.mock.calls
+        .map((call) => call[1].name)
+        .sort(),
+    ).toEqual(["身分證正面.jpg", "身分證背面.jpg"]);
+    expect(client.items.files.attach.mock.calls[0]?.[1].fieldId).toBe(
+      frontFieldId,
     );
-    assert.equal(state.attachCalls[0]?.fieldId, frontFieldId);
-    assert.equal(state.attachCalls[1]?.fieldId, backFieldId);
+    expect(client.items.files.attach.mock.calls[1]?.[1].fieldId).toBe(
+      backFieldId,
+    );
   });
 
   it("replaces all attachments when extra field IDs exist", async () => {
@@ -528,11 +540,11 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.updated, 1);
-    assert.equal(summary.attachmentsUploaded, 2);
-    assert.equal(state.deleteFileCalls.length, 4);
-    assert.equal(state.attachCalls.length, 2);
-    assert.equal(state.items.get("existing-1")?.files.length, 2);
+    expect(summary.updated).toBe(1);
+    expect(summary.attachmentsUploaded).toBe(2);
+    expect(client.items.files.delete).toHaveBeenCalledTimes(4);
+    expect(client.items.files.attach).toHaveBeenCalledTimes(2);
+    expect(state.items.get("existing-1")?.files).toHaveLength(2);
   });
 
   it("skips attachment upload when item already has all export files", async () => {
@@ -592,7 +604,7 @@ describe("migrator", () => {
       },
     ];
 
-    const { client, state } = createMockClient({ items: [existing] });
+    const { client } = createMockClient({ items: [existing] });
     const summary = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
@@ -600,10 +612,10 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.unchanged, 1);
-    assert.equal(summary.attachmentsUploaded, 0);
-    assert.equal(state.attachCalls.length, 0);
-    assert.equal(state.getCalls.length, 0);
+    expect(summary.unchanged).toBe(1);
+    expect(summary.attachmentsUploaded).toBe(0);
+    expect(client.items.files.attach).not.toHaveBeenCalled();
+    expect(client.items.get).not.toHaveBeenCalled();
   });
 
   it("archives items when export has archivedDate", async () => {
@@ -623,7 +635,7 @@ describe("migrator", () => {
       }),
     );
 
-    const { client, state } = createMockClient();
+    const { client } = createMockClient();
     const summary = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
@@ -631,9 +643,9 @@ describe("migrator", () => {
       dryRun: false,
     });
 
-    assert.equal(summary.created, 1);
-    assert.equal(summary.archived, 1);
-    assert.equal(state.archiveCalls.length, 1);
-    assert.equal(state.archiveCalls[0], "created-1");
+    expect(summary.created).toBe(1);
+    expect(summary.archived).toBe(1);
+    expect(client.items.archive).toHaveBeenCalledTimes(1);
+    expect(client.items.archive).toHaveBeenCalledWith("vault-1", "created-1");
   });
 });

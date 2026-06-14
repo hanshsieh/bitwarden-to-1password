@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import {
   isAsciiOnlyTag,
   mapBitwardenLabelsForSdk,
@@ -8,8 +7,8 @@ import {
 
 describe("tags", () => {
   it("detects non-ASCII tag names", () => {
-    assert.equal(isAsciiOnlyTag("Work"), true);
-    assert.equal(isAsciiOnlyTag("雲端空間"), false);
+    expect(isAsciiOnlyTag("Work")).toBe(true);
+    expect(isAsciiOnlyTag("雲端空間")).toBe(false);
   });
 
   it("maps only ASCII labels to SDK tags", () => {
@@ -19,11 +18,11 @@ describe("tags", () => {
       { name: "Team", source: "collection" },
     ]);
 
-    assert.deepEqual(tags, ["Work", "Team"]);
+    expect(tags).toEqual(["Work", "Team"]);
   });
 
   it("detects tags that need SDK stripping", () => {
-    assert.equal(tagsNeedSdkStripping(["Work", "Team"]), false);
-    assert.equal(tagsNeedSdkStripping(["Work", "雲端空間"]), true);
+    expect(tagsNeedSdkStripping(["Work", "Team"])).toBe(false);
+    expect(tagsNeedSdkStripping(["Work", "雲端空間"])).toBe(true);
   });
 });

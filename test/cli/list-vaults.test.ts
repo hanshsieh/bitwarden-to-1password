@@ -1,11 +1,14 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { VaultType } from "@1password/sdk";
 import { ListVaultsCommand } from "../../src/cli/list-vaults.js";
 import { OnePasswordClientFactory } from "../../src/onepassword/client.js";
 import { createMockClient } from "../helpers/mock-client.js";
 
 describe("list-vaults", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("prints accessible vaults", async () => {
     const vaults = [
       {
@@ -34,46 +37,36 @@ describe("list-vaults", () => {
 
     const { client } = createMockClient({ vaults });
     const factory = new OnePasswordClientFactory();
-    const originalCreate = factory.create.bind(factory);
-    factory.create = async () => client;
+    vi.spyOn(factory, "create").mockResolvedValue(client);
 
     const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (...args: unknown[]) => {
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       logs.push(args.map(String).join(" "));
-    };
+    });
 
-    try {
-      const code = await new ListVaultsCommand(factory).run();
-      assert.equal(code, 0);
-      assert.match(logs.join("\n"), /Vaults accessible to the service account \(2\)/);
-      assert.match(logs.join("\n"), /Personal Migration \(abc-123\)/);
-      assert.match(logs.join("\n"), /Work Vault \(def-456\)/);
-    } finally {
-      console.log = originalLog;
-      factory.create = originalCreate;
-    }
+    const code = await new ListVaultsCommand(factory).run();
+    expect(code).toBe(0);
+    expect(logs.join("\n")).toMatch(
+      /Vaults accessible to the service account \(2\)/,
+    );
+    expect(logs.join("\n")).toMatch(/Personal Migration \(abc-123\)/);
+    expect(logs.join("\n")).toMatch(/Work Vault \(def-456\)/);
   });
 
   it("prints a message when no vaults are accessible", async () => {
     const { client } = createMockClient({ vaults: [] });
     const factory = new OnePasswordClientFactory();
-    const originalCreate = factory.create.bind(factory);
-    factory.create = async () => client;
+    vi.spyOn(factory, "create").mockResolvedValue(client);
 
     const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (...args: unknown[]) => {
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       logs.push(args.map(String).join(" "));
-    };
+    });
 
-    try {
-      const code = await new ListVaultsCommand(factory).run();
-      assert.equal(code, 0);
-      assert.match(logs.join("\n"), /No vaults accessible to the service account/);
-    } finally {
-      console.log = originalLog;
-      factory.create = originalCreate;
-    }
+    const code = await new ListVaultsCommand(factory).run();
+    expect(code).toBe(0);
+    expect(logs.join("\n")).toMatch(
+      /No vaults accessible to the service account/,
+    );
   });
 });

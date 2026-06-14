@@ -521,13 +521,3 @@ export class Migrator {
   }
 }
 
-/** Convenience wrapper using a default migrator instance. */
-export async function migrate(
-  client: OnePasswordClient,
-  options: MigrateOptions,
-): Promise<MigrationSummary> {
-  return new Migrator(client).migrate(options);
-}
-
-export { BitwardenExportParser, parseExport } from "../bitwarden/export-parser.js";
-export type { ParsedBitwardenExport };

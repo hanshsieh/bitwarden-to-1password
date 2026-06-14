@@ -16,7 +16,7 @@ import type { BitwardenAttachment } from "../bitwarden/types.js";
 /**
  * Minimal 1Password SDK surface used by this tool.
  *
- * Defined as an interface so unit tests can inject {@link createMockClient}
+ * Defined as an interface so callers and tests can inject a fake implementation
  * without calling the real API.
  */
 export interface OnePasswordClient {

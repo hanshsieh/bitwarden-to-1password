@@ -448,7 +448,7 @@ export class OnePasswordItemMapper {
   }
 }
 
-// Re-export section ID constants for callers and tests.
+// Re-export section ID constants for callers.
 export const CUSTOM_FIELDS_SECTION_ID =
   OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID;
 export const CUSTOM_FIELDS_SECTION_TITLE =
@@ -460,41 +460,6 @@ export const ATTACHMENTS_SECTION_TITLE =
 export const SSH_KEYS_SECTION_ID = OnePasswordItemMapper.SSH_KEYS_SECTION_ID;
 export const SSH_KEYS_SECTION_TITLE =
   OnePasswordItemMapper.SSH_KEYS_SECTION_TITLE;
-
-/** Convenience wrapper using a default mapper instance. */
-export function mapItem(
-  item: ParsedBitwardenItem,
-  exportData: ParsedBitwardenExport,
-  vaultId: string,
-  attachments: BitwardenAttachment[] = [],
-): MappedItem {
-  return new OnePasswordItemMapper().map(
-    item,
-    exportData,
-    vaultId,
-    attachments,
-  );
-}
-
-export function extractBitwardenUsername(item: ParsedBitwardenItem): string {
-  return new OnePasswordItemMapper().extractBitwardenUsername(item);
-}
-
-export function extractOnePasswordUsername(
-  fields: ItemField[],
-  category: ItemCategory,
-): string {
-  return new OnePasswordItemMapper().extractOnePasswordUsername(
-    fields,
-    category,
-  );
-}
-
-export function bitwardenTypeToCategory(
-  type: ParsedBitwardenItem["type"],
-): ItemCategory {
-  return OnePasswordItemMapper.bitwardenTypeToCategory(type);
-}
 
 /**
  * Map a Bitwarden URI match mode to 1Password autofill behavior.

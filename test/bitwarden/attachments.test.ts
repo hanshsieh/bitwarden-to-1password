@@ -1,6 +1,5 @@
-import { strict as assert } from "node:assert";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import {
   attachmentSize,
   readAttachmentFile,
@@ -16,26 +15,26 @@ const LOGIN_ID = "item-login-0001-0001-0001-000000000001";
 describe("attachments", () => {
   it("scans new and legacy attachment layouts", () => {
     const attachments = scanAttachments(FIXTURES, LOGIN_ID);
-    assert.equal(attachments.length, 2);
+    expect(attachments).toHaveLength(2);
 
     const legacy = attachments.find((a) => a.filename === "legacy-file.txt");
-    assert.ok(legacy);
-    assert.equal(legacy.attachmentId, null);
+    expect(legacy).toBeDefined();
+    expect(legacy?.attachmentId).toBeNull();
 
     const nested = attachments.find((a) => a.filename === "readme.txt");
-    assert.ok(nested);
-    assert.equal(nested.attachmentId, "att-new-layout");
+    expect(nested).toBeDefined();
+    expect(nested?.attachmentId).toBe("att-new-layout");
   });
 
   it("returns empty list when no attachment directory exists", () => {
-    assert.deepEqual(scanAttachments(FIXTURES, "missing-item"), []);
+    expect(scanAttachments(FIXTURES, "missing-item")).toEqual([]);
   });
 
   it("reads attachment bytes and reports size", () => {
     const attachments = scanAttachments(FIXTURES, LOGIN_ID);
     const legacy = attachments.find((a) => a.filename === "legacy-file.txt")!;
     const content = readAttachmentFile(legacy.filePath);
-    assert.ok(content.length > 0);
-    assert.equal(attachmentSize(legacy.filePath), content.length);
+    expect(content.length).toBeGreaterThan(0);
+    expect(attachmentSize(legacy.filePath)).toBe(content.length);
   });
 });

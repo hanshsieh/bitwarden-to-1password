@@ -1,20 +1,14 @@
-import assert from "node:assert/strict";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import { ItemCategory, ItemFieldType } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
+import { MergeEngine } from "../../src/onepassword/merge-engine.js";
 import {
-  applyDesiredContent,
-  buildDesiredItem,
-  buildMatchIndex,
-  buildMatchKey,
-  decideMergeAction,
-  expectedFilesFromMapped,
-  itemContentMatchesDesired,
-  itemsMatchDesired,
-  stripNonAsciiTags,
-} from "../../src/onepassword/merge-engine.js";
-import { ATTACHMENTS_SECTION_ID, ATTACHMENTS_SECTION_TITLE, CUSTOM_FIELDS_SECTION_TITLE, mapItem } from "../../src/onepassword/item-mapper.js";
+  ATTACHMENTS_SECTION_ID,
+  ATTACHMENTS_SECTION_TITLE,
+  CUSTOM_FIELDS_SECTION_TITLE,
+  OnePasswordItemMapper,
+} from "../../src/onepassword/item-mapper.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
@@ -22,37 +16,38 @@ const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault")
 describe("merge engine", () => {
   const parsed = parseExport(FIXTURES);
   const loginItem = parsed.items.find((i) => i.name === "Example Login")!;
+  const mapper = new OnePasswordItemMapper();
 
   it("builds a match index by category, title, and username", async () => {
     const { client } = createMockClient({
       items: [makeLoginItem("existing-1", "Example Login", "user@example.com")],
     });
 
-    const matchIndex = await buildMatchIndex(client, "vault-1");
-    const key = buildMatchKey(
+    const matchIndex = await new MergeEngine(client).buildIndex("vault-1");
+    const key = MergeEngine.buildMatchKey(
       ItemCategory.Login,
       "Example Login",
       "user@example.com",
     );
-    assert.deepEqual(matchIndex.index.get(key), ["existing-1"]);
-    assert.equal(matchIndex.itemsById.get("existing-1")?.title, "Example Login");
+    expect(matchIndex.index.get(key)).toEqual(["existing-1"]);
+    expect(matchIndex.itemsById.get("existing-1")?.title).toBe("Example Login");
   });
 
   it("decideMergeAction handles all strategies", () => {
-    assert.deepEqual(decideMergeAction("skip", []), { action: "create" });
-    assert.deepEqual(decideMergeAction("skip", ["a"]), {
+    expect(MergeEngine.decide("skip", [])).toEqual({ action: "create" });
+    expect(MergeEngine.decide("skip", ["a"])).toEqual({
       action: "skip",
       targetItemId: "a",
     });
-    assert.deepEqual(decideMergeAction("merge", ["a"]), {
+    expect(MergeEngine.decide("merge", ["a"])).toEqual({
       action: "update",
       targetItemId: "a",
     });
-    assert.deepEqual(decideMergeAction("abort", ["a"]), { action: "abort" });
+    expect(MergeEngine.decide("abort", ["a"])).toEqual({ action: "abort" });
 
-    const multi = decideMergeAction("merge", ["a", "b"]);
-    assert.equal(multi.action, "skip");
-    assert.match(multi.warning ?? "", /Multiple matches/);
+    const multi = MergeEngine.decide("merge", ["a", "b"]);
+    expect(multi.action).toBe("skip");
+    expect(multi.warning ?? "").toMatch(/Multiple matches/);
   });
 
   it("itemsMatchDesired compares fields strictly including order and ids", () => {
@@ -61,25 +56,25 @@ describe("merge engine", () => {
       "Example Login",
       "user@example.com",
     );
-    const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(
+    const mapped = mapper.map(loginItem, parsed, "vault-1");
+    const desired = MergeEngine.buildDesiredItem(
       existing,
       mapped.params,
-      expectedFilesFromMapped(mapped),
+      MergeEngine.expectedFilesFromMapped(mapped),
     );
 
-    assert.equal(itemsMatchDesired(existing, desired), false);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
 
-    const synced = applyDesiredContent(structuredClone(existing), desired);
-    assert.equal(itemsMatchDesired(synced, desired), true);
+    const synced = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
+    expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(true);
 
     const reordered = structuredClone(synced);
     reordered.fields.reverse();
-    assert.equal(itemsMatchDesired(reordered, desired), false);
+    expect(MergeEngine.itemsMatchDesired(reordered, desired)).toBe(false);
 
     const differentId = structuredClone(synced);
     differentId.fields[0] = { ...differentId.fields[0]!, id: "other" };
-    assert.equal(itemsMatchDesired(differentId, desired), false);
+    expect(MergeEngine.itemsMatchDesired(differentId, desired)).toBe(false);
   });
 
   it("itemsMatchDesired matches fields in different sections when section titles match", () => {
@@ -88,13 +83,13 @@ describe("merge engine", () => {
       "Example Login",
       "user@example.com",
     );
-    const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(
+    const mapped = mapper.map(loginItem, parsed, "vault-1");
+    const desired = MergeEngine.buildDesiredItem(
       existing,
       mapped.params,
-      expectedFilesFromMapped(mapped),
+      MergeEngine.expectedFilesFromMapped(mapped),
     );
-    const synced = applyDesiredContent(structuredClone(existing), desired);
+    const synced = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
 
     synced.sections = (synced.sections ?? []).map((section) =>
       section.title === CUSTOM_FIELDS_SECTION_TITLE
@@ -107,7 +102,7 @@ describe("merge engine", () => {
         : field,
     );
 
-    assert.equal(itemsMatchDesired(synced, desired), true);
+    expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(true);
   });
 
   it("itemsMatchDesired rejects fields with different section titles", () => {
@@ -116,13 +111,13 @@ describe("merge engine", () => {
       "Example Login",
       "user@example.com",
     );
-    const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(
+    const mapped = mapper.map(loginItem, parsed, "vault-1");
+    const desired = MergeEngine.buildDesiredItem(
       existing,
       mapped.params,
-      expectedFilesFromMapped(mapped),
+      MergeEngine.expectedFilesFromMapped(mapped),
     );
-    const synced = applyDesiredContent(structuredClone(existing), desired);
+    const synced = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
 
     synced.sections = (synced.sections ?? []).map((section) =>
       section.title === CUSTOM_FIELDS_SECTION_TITLE
@@ -130,12 +125,12 @@ describe("merge engine", () => {
         : section,
     );
 
-    assert.equal(itemsMatchDesired(synced, desired), false);
+    expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(false);
   });
 
   it("itemContentMatchesDesired compares unreferenced sections by title", () => {
     const existing = makeLoginItem("existing-1", "Login", "user@example.com");
-    const desired = buildDesiredItem(existing, {
+    const desired = MergeEngine.buildDesiredItem(existing, {
       category: ItemCategory.Login,
       vaultId: "vault-1",
       title: "Login",
@@ -158,7 +153,7 @@ describe("merge engine", () => {
       },
     ];
 
-    assert.equal(itemContentMatchesDesired(existing, desired), false);
+    expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(false);
 
     existing.sections = [
       {
@@ -166,12 +161,12 @@ describe("merge engine", () => {
         title: ATTACHMENTS_SECTION_TITLE,
       },
     ];
-    assert.equal(itemContentMatchesDesired(existing, desired), true);
+    expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(true);
   });
 
   it("itemsMatchDesired treats desired tags as a subset of actual tags", () => {
     const existing = makeLoginItem("a", "Login", "user@example.com");
-    const desired = buildDesiredItem(existing, {
+    const desired = MergeEngine.buildDesiredItem(existing, {
       category: ItemCategory.Login,
       vaultId: "vault-1",
       title: "Login",
@@ -179,17 +174,17 @@ describe("merge engine", () => {
     });
 
     existing.tags = ["Extra"];
-    assert.equal(itemsMatchDesired(existing, desired), false);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
 
     existing.fields = desired.fields;
     existing.websites = desired.websites;
     existing.notes = desired.notes;
     existing.sections = desired.sections;
     existing.tags = ["Work", "Extra"];
-    assert.equal(itemsMatchDesired(existing, desired), true);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(true);
 
     existing.tags = ["Work", "雲端空間"];
-    assert.equal(itemsMatchDesired(existing, desired), true);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(true);
   });
 
   it("itemsMatchDesired compares attachment field IDs and section IDs", () => {
@@ -198,7 +193,7 @@ describe("merge engine", () => {
       "Example Login",
       "user@example.com",
     );
-    const desired = buildDesiredItem(
+    const desired = MergeEngine.buildDesiredItem(
       existing,
       {
         category: ItemCategory.Login,
@@ -225,16 +220,16 @@ describe("merge engine", () => {
     existing.notes = desired.notes;
     existing.sections = desired.sections;
     existing.files = [];
-    assert.equal(itemsMatchDesired(existing, desired), false);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
 
     existing.files = structuredClone(desired.files);
-    assert.equal(itemsMatchDesired(existing, desired), true);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(true);
 
     existing.files[0] = {
       ...existing.files[0]!,
       sectionId: "other_section",
     };
-    assert.equal(itemsMatchDesired(existing, desired), false);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
 
     existing.files[0] = structuredClone(desired.files[0]!);
     existing.files.push({
@@ -242,7 +237,7 @@ describe("merge engine", () => {
       sectionId: ATTACHMENTS_SECTION_ID,
       fieldId: "attach_def",
     });
-    assert.equal(itemsMatchDesired(existing, desired), false);
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
   });
 
   it("applyDesiredContent overwrites migratable fields", () => {
@@ -260,29 +255,26 @@ describe("merge engine", () => {
       value: "9999",
     });
 
-    const mapped = mapItem(loginItem, parsed, "vault-1");
-    const desired = buildDesiredItem(
+    const mapped = mapper.map(loginItem, parsed, "vault-1");
+    const desired = MergeEngine.buildDesiredItem(
       existing,
       mapped.params,
-      expectedFilesFromMapped(mapped),
+      MergeEngine.expectedFilesFromMapped(mapped),
     );
-    const updated = applyDesiredContent(structuredClone(existing), desired);
+    const updated = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
 
-    assert.equal(updated.notes, "Login notes");
-    assert.deepEqual(updated.tags, ["Work"]);
-    assert.equal(
-      updated.fields.find((f) => f.id === "cust_1")?.value,
-      "1234",
-    );
-    assert.ok(
-      !updated.websites.some((w) => w.url === "https://existing.example.com"),
-    );
+    expect(updated.notes).toBe("Login notes");
+    expect(updated.tags).toEqual(["Work"]);
+    expect(updated.fields.find((f) => f.id === "cust_1")?.value).toBe("1234");
+    expect(
+      updated.websites.some((w) => w.url === "https://existing.example.com"),
+    ).toBe(false);
   });
 
   it("stripNonAsciiTags keeps only ASCII tags", () => {
     const item = makeLoginItem("a", "Login", "user@example.com");
     item.tags = ["Work", "雲端空間", "Team"];
-    stripNonAsciiTags(item);
-    assert.deepEqual(item.tags, ["Work", "Team"]);
+    MergeEngine.stripNonAsciiTags(item);
+    expect(item.tags).toEqual(["Work", "Team"]);
   });
 });

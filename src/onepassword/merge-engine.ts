@@ -4,7 +4,6 @@ import type {
   ItemCreateParams,
   ItemField,
   ItemFile,
-  ItemOverview,
   ItemSection,
   Website,
 } from "@1password/sdk";
@@ -13,7 +12,6 @@ import { filterSdkSafeTags } from "./tags.js";
 import {
   OnePasswordItemMapper,
   ATTACHMENTS_SECTION_ID,
-  bitwardenTypeToCategory,
 } from "./item-mapper.js";
 import type {
   MappedItem,
@@ -111,20 +109,8 @@ export class MergeEngine {
 
   /** Find existing item IDs that match an export cipher. */
   findMatches(matchIndex: MatchIndex, item: ParsedBitwardenItem): string[] {
-    const category = bitwardenTypeToCategory(item.type);
+    const category = OnePasswordItemMapper.bitwardenTypeToCategory(item.type);
     const username = this.itemMapper.extractBitwardenUsername(item);
-    const key = MergeEngine.buildMatchKey(category, item.name, username);
-    return matchIndex.index.get(key) ?? [];
-  }
-
-  /** Static variant for tests that do not need a client instance. */
-  static findMatchesInIndex(
-    matchIndex: MatchIndex,
-    item: ParsedBitwardenItem,
-    itemMapper = new OnePasswordItemMapper(),
-  ): string[] {
-    const category = bitwardenTypeToCategory(item.type);
-    const username = itemMapper.extractBitwardenUsername(item);
     const key = MergeEngine.buildMatchKey(category, item.name, username);
     return matchIndex.index.get(key) ?? [];
   }
@@ -274,32 +260,6 @@ export class MergeEngine {
     return new Set(item.files.map((f) => f.fieldId));
   }
 
-  /** Build index from preloaded data (used in unit tests). */
-  static buildIndexFromOverviews(
-    overviews: ItemOverview[],
-    itemsById: Map<string, Item>,
-    itemMapper = new OnePasswordItemMapper(),
-  ): MatchIndex {
-    const index = new Map<MatchKey, string[]>();
-
-    for (const overview of overviews) {
-      const item = itemsById.get(overview.id);
-      const username = item
-        ? itemMapper.extractOnePasswordUsername(item.fields, item.category)
-        : "";
-      const key = MergeEngine.buildMatchKey(
-        overview.category,
-        overview.title,
-        username,
-      );
-      const existing = index.get(key) ?? [];
-      existing.push(overview.id);
-      index.set(key, existing);
-    }
-
-    return { index, itemsById };
-  }
-
   private static sectionTitle(
     sections: ItemSection[],
     sectionId?: string,
@@ -397,79 +357,3 @@ export class MergeEngine {
     );
   }
 }
-
-// Thin function exports preserve test and legacy import paths.
-export const buildMatchKey = MergeEngine.buildMatchKey;
-
-export async function buildMatchIndex(
-  client: OnePasswordClient,
-  vaultId: string,
-): Promise<MatchIndex> {
-  return new MergeEngine(client).buildIndex(vaultId);
-}
-
-export function decideMergeAction(
-  strategy: MergeStrategy,
-  matchIds: string[],
-): MergeDecision {
-  return MergeEngine.decide(strategy, matchIds);
-}
-
-export function findMatches(
-  matchIndex: MatchIndex,
-  item: ParsedBitwardenItem,
-): string[] {
-  return MergeEngine.findMatchesInIndex(matchIndex, item);
-}
-
-export function buildDesiredItem(
-  existing: Item,
-  params: ItemCreateParams,
-  expectedFiles: ItemFile[] = [],
-): Item {
-  return MergeEngine.buildDesiredItem(existing, params, expectedFiles);
-}
-
-export function expectedFilesFromMapped(mapped: MappedItem): ItemFile[] {
-  return MergeEngine.expectedFilesFromMapped(mapped);
-}
-
-export function itemsMatchDesired(actual: Item, desired: Item): boolean {
-  return MergeEngine.itemsMatchDesired(actual, desired);
-}
-
-export function itemContentMatchesDesired(actual: Item, desired: Item): boolean {
-  return MergeEngine.itemContentMatchesDesired(actual, desired);
-}
-
-export function filesMatchExpected(
-  actual: ItemFile[],
-  expected: ItemFile[],
-): boolean {
-  return MergeEngine.filesMatchExpected(actual, expected);
-}
-
-export function applyDesiredContent(existing: Item, desired: Item): Item {
-  return MergeEngine.applyDesiredContent(existing, desired);
-}
-
-export function existingAttachmentFieldIds(item: Item): Set<string> {
-  return MergeEngine.existingAttachmentFieldIds(item);
-}
-
-export function stripNonAsciiTags(item: Item): void {
-  MergeEngine.stripNonAsciiTags(item);
-}
-
-export function getCachedItem(
-  matchIndex: MatchIndex,
-  itemId: string,
-): Item {
-  return MergeEngine.getCachedItem(matchIndex, itemId);
-}
-
-export function setCachedItem(matchIndex: MatchIndex, item: Item): void {
-  MergeEngine.setCachedItem(matchIndex, item);
-}
-
-export const buildMatchIndexFromOverviews = MergeEngine.buildIndexFromOverviews;

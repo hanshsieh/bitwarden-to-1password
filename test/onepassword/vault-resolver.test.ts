@@ -1,10 +1,6 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import { VaultType } from "@1password/sdk";
-import {
-  filterVaultsByHint,
-  resolveVault,
-} from "../../src/onepassword/vault-resolver.js";
+import { VaultResolver } from "../../src/onepassword/vault-resolver.js";
 import { createMockClient } from "../helpers/mock-client.js";
 
 const vaults = [
@@ -34,26 +30,26 @@ const vaults = [
 
 describe("vault-resolver", () => {
   it("matches vault by case-insensitive title substring", () => {
-    const matches = filterVaultsByHint(vaults, "personal");
-    assert.equal(matches.length, 1);
-    assert.equal(matches[0]?.title, "Personal Migration");
+    const matches = VaultResolver.filterByHint(vaults, "personal");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.title).toBe("Personal Migration");
   });
 
   it("matches vault by id", () => {
-    const matches = filterVaultsByHint(vaults, "abc-123-vault-id");
-    assert.equal(matches.length, 1);
+    const matches = VaultResolver.filterByHint(vaults, "abc-123-vault-id");
+    expect(matches).toHaveLength(1);
   });
 
   it("uses the only vault when no hint is provided", async () => {
     const { client } = createMockClient({ vaults: [vaults[0]!] });
-    const resolved = await resolveVault(client);
-    assert.equal(resolved.id, vaults[0]!.id);
+    const resolved = await new VaultResolver(client).resolve();
+    expect(resolved.id).toBe(vaults[0]!.id);
   });
 
   it("resolves vault by hint", async () => {
     const { client } = createMockClient({ vaults });
-    const resolved = await resolveVault(client, "work");
-    assert.equal(resolved.title, "Work Vault");
+    const resolved = await new VaultResolver(client).resolve("work");
+    expect(resolved.title).toBe("Work Vault");
   });
 
   it("throws when hint matches multiple vaults", async () => {
@@ -68,17 +64,15 @@ describe("vault-resolver", () => {
       ],
     });
 
-    await assert.rejects(
-      () => resolveVault(client, "personal"),
+    await expect(new VaultResolver(client).resolve("personal")).rejects.toThrow(
       /Multiple vaults match/,
     );
   });
 
   it("throws when hint matches nothing", async () => {
     const { client } = createMockClient({ vaults });
-    await assert.rejects(
-      () => resolveVault(client, "nonexistent"),
-      /No vault matches/,
-    );
+    await expect(
+      new VaultResolver(client).resolve("nonexistent"),
+    ).rejects.toThrow(/No vault matches/);
   });
 });

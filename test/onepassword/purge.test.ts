@@ -1,7 +1,5 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
-import { ItemCategory, ItemState } from "@1password/sdk";
-import { purgeVault } from "../../src/onepassword/vault-purger.js";
+import { describe, expect, it } from "vitest";
+import { VaultPurger } from "../../src/onepassword/vault-purger.js";
 import { createMockClient, itemToOverview, makeLoginItem } from "../helpers/mock-client.js";
 
 describe("purge", () => {
@@ -12,17 +10,17 @@ describe("purge", () => {
       overviews: [itemToOverview(item)],
     });
 
-    const result = await purgeVault(client, {
+    const result = await new VaultPurger(client).purge({
       vaultId: "vault-1",
       yes: false,
       dryRun: true,
     });
 
-    assert.equal(result.matched, 1);
-    assert.equal(result.deleted, 0);
+    expect(result.matched).toBe(1);
+    expect(result.deleted).toBe(0);
 
     const remaining = await client.items.list("vault-1");
-    assert.equal(remaining.length, 1);
+    expect(remaining).toHaveLength(1);
   });
 
   it("filters by updated-on-or-after date", async () => {
@@ -39,17 +37,17 @@ describe("purge", () => {
       overviews: [itemToOverview(oldItem), itemToOverview(newItem)],
     });
 
-    const result = await purgeVault(client, {
+    const result = await new VaultPurger(client).purge({
       vaultId: "vault-1",
       yes: true,
       dryRun: false,
       updatedOnOrAfter: new Date("2024-06-01T00:00:00Z"),
     });
 
-    assert.equal(result.deleted, 1);
+    expect(result.deleted).toBe(1);
     const remaining = await client.items.list("vault-1");
-    assert.equal(remaining.length, 1);
-    assert.equal(remaining[0]?.id, "old");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).toBe("old");
   });
 
   it("deletes all items when confirmed with --yes", async () => {
@@ -59,14 +57,14 @@ describe("purge", () => {
       overviews: [itemToOverview(item)],
     });
 
-    const result = await purgeVault(client, {
+    const result = await new VaultPurger(client).purge({
       vaultId: "vault-1",
       yes: true,
       dryRun: false,
     });
 
-    assert.equal(result.deleted, 1);
-    assert.equal(result.failed, 0);
-    assert.equal((await client.items.list("vault-1")).length, 0);
+    expect(result.deleted).toBe(1);
+    expect(result.failed).toBe(0);
+    expect((await client.items.list("vault-1")).length).toBe(0);
   });
 });

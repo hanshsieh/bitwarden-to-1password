@@ -141,12 +141,3 @@ export class VaultPurger {
     }
   }
 }
-
-export const filterItemsByDate = VaultPurger.filterByUpdatedDate;
-
-export async function purgeVault(
-  client: OnePasswordClient,
-  options: PurgeOptions,
-): Promise<PurgeResult> {
-  return new VaultPurger(client).purge(options);
-}

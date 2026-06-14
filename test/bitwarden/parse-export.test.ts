@@ -1,8 +1,7 @@
-import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports");
@@ -10,29 +9,31 @@ const FIXTURES = join(import.meta.dirname, "../fixtures/exports");
 describe("parse-export", () => {
   it("parses a valid personal vault export", () => {
     const parsed = parseExport(join(FIXTURES, "personal-vault"));
-    assert.equal(parsed.items.length, 5);
-    assert.equal(
+    expect(parsed.items).toHaveLength(5);
+    expect(
       parsed.folders.get("folder-work-0001-0001-0001-000000000001"),
-      "Work",
-    );
-    assert.equal(parsed.skippedDeleted, 1);
-    assert.equal(parsed.skippedUnsupported, 1);
+    ).toBe("Work");
+    expect(parsed.skippedDeleted).toBe(1);
+    expect(parsed.skippedUnsupported).toBe(1);
   });
 
   it("skips deleted items", () => {
     const parsed = parseExport(join(FIXTURES, "personal-vault"));
-    assert.ok(parsed.items.every((item) => item.name !== "Deleted Login"));
+    expect(parsed.items.every((item) => item.name !== "Deleted Login")).toBe(
+      true,
+    );
   });
 
   it("rejects encrypted exports", () => {
-    assert.throws(
-      () => parseExport(join(FIXTURES, "encrypted")),
+    expect(() => parseExport(join(FIXTURES, "encrypted"))).toThrow(
       /Encrypted Bitwarden export/,
     );
   });
 
   it("rejects missing data.json", () => {
-    assert.throws(() => parseExport(join(FIXTURES, "encrypted-not-real")));
+    expect(() =>
+      parseExport(join(FIXTURES, "encrypted-not-real")),
+    ).toThrow();
   });
 
   it("rejects items missing required name", () => {
@@ -41,8 +42,7 @@ describe("parse-export", () => {
       join(dir, "data.json"),
       JSON.stringify({ encrypted: false, items: [{ type: 1, login: {} }] }),
     );
-    assert.throws(
-      () => parseExport(dir),
+    expect(() => parseExport(dir)).toThrow(
       /item at index 0, type 1 is missing required field "name"/,
     );
   });
@@ -68,23 +68,24 @@ describe("parse-export", () => {
       }),
     );
 
-    assert.throws(() => parseExport(dir), (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /Invalid Bitwarden export:/);
-      assert.match(
-        error.message,
+    expect(() => parseExport(dir)).toThrow(/Invalid Bitwarden export:/);
+
+    try {
+      parseExport(dir);
+      expect.unreachable("parseExport should throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toMatch(
         /item at index 0, name "Broken Login", id item-123, type 1, fields\[0\]\.name/,
       );
-      assert.match(
-        error.message,
+      expect(message).toMatch(
         /item at index 0, name "Broken Login", id item-123, type 1, login\.uris\[0\]\.uri/,
       );
-      assert.match(
-        error.message,
+      expect(message).toMatch(
         /item at index 0, name "Broken Login", id item-123, type 1, login\.fido2Credentials\[0\]\.credentialId/,
       );
-      return true;
-    });
+    }
   });
 
   it("preserves login fido2Credentials from export", () => {
@@ -107,9 +108,8 @@ describe("parse-export", () => {
     );
 
     const parsed = parseExport(dir);
-    assert.equal(parsed.items[0]?.login?.fido2Credentials?.length, 1);
-    assert.equal(
-      parsed.items[0]?.login?.fido2Credentials?.[0]?.credentialId,
+    expect(parsed.items[0]?.login?.fido2Credentials).toHaveLength(1);
+    expect(parsed.items[0]?.login?.fido2Credentials?.[0]?.credentialId).toBe(
       "cred-1",
     );
   });
@@ -135,10 +135,10 @@ describe("parse-export", () => {
     );
 
     const parsed = parseExport(dir);
-    assert.equal(parsed.items.length, 1);
-    assert.equal(parsed.items[0]?.fields.length, 2);
-    assert.equal(parsed.items[0]?.fields[1]?.type, 3);
-    assert.equal(parsed.items[0]?.fields[1]?.value, null);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]?.fields).toHaveLength(2);
+    expect(parsed.items[0]?.fields[1]?.type).toBe(3);
+    expect(parsed.items[0]?.fields[1]?.value).toBeNull();
   });
 
   it("accepts custom fields and URIs with omitted linkedId and match", () => {
@@ -162,9 +162,9 @@ describe("parse-export", () => {
     );
 
     const parsed = parseExport(dir);
-    assert.equal(parsed.items.length, 1);
-    assert.equal(parsed.items[0]?.fields[0]?.linkedId, null);
-    assert.equal(parsed.items[0]?.login?.uris?.[0]?.match, null);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]?.fields[0]?.linkedId).toBeNull();
+    expect(parsed.items[0]?.login?.uris?.[0]?.match).toBeNull();
   });
 
   it("includes archived items with archivedDate preserved", () => {
@@ -185,7 +185,7 @@ describe("parse-export", () => {
     );
 
     const parsed = parseExport(dir);
-    assert.equal(parsed.items.length, 1);
-    assert.equal(parsed.items[0]?.archivedDate, "2026-06-13T08:16:07.105Z");
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]?.archivedDate).toBe("2026-06-13T08:16:07.105Z");
   });
 });

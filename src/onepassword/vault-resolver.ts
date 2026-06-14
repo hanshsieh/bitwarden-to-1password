@@ -49,7 +49,6 @@ export class VaultResolver {
 
   /**
    * Filter vaults whose ID or title contains the hint (case-insensitive).
-   * Exposed for unit tests.
    */
   static filterByHint(
     vaults: VaultOverview[],
@@ -111,13 +110,4 @@ export class VaultResolver {
     }
     return selected;
   }
-}
-
-export const filterVaultsByHint = VaultResolver.filterByHint;
-
-export async function resolveVault(
-  client: OnePasswordClient,
-  vaultQueryOrOptions?: string | ResolveVaultOptions,
-): Promise<VaultOverview> {
-  return new VaultResolver(client).resolve(vaultQueryOrOptions);
 }
