@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ItemCategory, ItemFieldType } from "@1password/sdk";
+import { ItemCategory, ItemFieldType, ItemState } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import { MergeEngine } from "../../src/onepassword/merge-engine.js";
 import {
@@ -9,7 +9,11 @@ import {
   CUSTOM_FIELDS_SECTION_TITLE,
   OnePasswordItemMapper,
 } from "../../src/onepassword/item-mapper.js";
-import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
+import {
+  createMockClient,
+  makeLoginItem,
+  makeOverview,
+} from "../helpers/mock-client.js";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/exports/personal-vault");
 
@@ -31,6 +35,32 @@ describe("merge engine", () => {
     );
     expect(matchIndex.index.get(key)).toEqual(["existing-1"]);
     expect(matchIndex.itemsById.get("existing-1")?.title).toBe("Example Login");
+  });
+
+  it("includes archived vault items in the match index", async () => {
+    const archivedItem = makeLoginItem(
+      "archived-1",
+      "Archived Login",
+      "user@example.com",
+    );
+    const { client } = createMockClient({
+      items: [archivedItem],
+      overviews: [
+        makeOverview({
+          id: "archived-1",
+          title: "Archived Login",
+          state: ItemState.Archived,
+        }),
+      ],
+    });
+
+    const matchIndex = await new MergeEngine(client).buildIndex("vault-1");
+    const key = MergeEngine.buildMatchKey(
+      ItemCategory.Login,
+      "Archived Login",
+      "user@example.com",
+    );
+    expect(matchIndex.index.get(key)).toEqual(["archived-1"]);
   });
 
   it("decideMergeAction handles all strategies", () => {

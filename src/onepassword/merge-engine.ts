@@ -61,7 +61,10 @@ export class MergeEngine {
    * Requires a full item fetch because overviews do not include username fields.
    */
   async buildIndex(vaultId: string): Promise<MatchIndex> {
-    const overviews = await this.client.items.list(vaultId);
+    const overviews = await this.client.items.list(vaultId, {
+      type: "ByState",
+      content: { active: true, archived: true },
+    });
     const index = new Map<MatchKey, string[]>();
     const itemsById = new Map<string, Item>();
 

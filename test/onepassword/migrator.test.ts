@@ -660,4 +660,43 @@ describe("migrator", () => {
     expect(client.items.archive).toHaveBeenCalledTimes(1);
     expect(client.items.archive).toHaveBeenCalledWith("vault-1", "created-1");
   });
+
+  it("does not recreate archived items on a second run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const first = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+    expect(first.created).toBe(1);
+    expect(first.archived).toBe(1);
+
+    const second = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "skip",
+      dryRun: false,
+    });
+    expect(second.created).toBe(0);
+    expect(second.skipped).toBe(1);
+    expect(client.items.createAll).toHaveBeenCalledTimes(1);
+    expect(client.items.archive).toHaveBeenCalledTimes(1);
+  });
 });

@@ -6,6 +6,7 @@ import {
   type FileCreateParams,
   type Item,
   type ItemCreateParams,
+  type ItemListFilter,
   type ItemOverview,
   type ItemsDeleteAllResponse,
   type ItemsGetAllResponse,
@@ -28,6 +29,23 @@ function normalizeItems(
   if (!items) return new Map();
   if (items instanceof Map) return items;
   return new Map(items.map((item) => [item.id, item]));
+}
+
+function filterOverviewsByState(
+  overviews: ItemOverview[],
+  filters: ItemListFilter[],
+): ItemOverview[] {
+  const stateFilter = filters.find((filter) => filter.type === "ByState");
+  if (!stateFilter) {
+    return overviews.filter((overview) => overview.state === ItemState.Active);
+  }
+
+  const { active, archived } = stateFilter.content;
+  return overviews.filter((overview) => {
+    if (overview.state === ItemState.Active) return active;
+    if (overview.state === ItemState.Archived) return archived;
+    return false;
+  });
 }
 
 export function createMockClient(
@@ -128,7 +146,9 @@ export function createMockClient(
       list: vi.fn(async () => state.vaults),
     },
     items: {
-      list: vi.fn(async (_vaultId) => state.overviews),
+      list: vi.fn(async (_vaultId, ...filters) =>
+        filterOverviewsByState(state.overviews, filters),
+      ),
       get: vi.fn(async (_vaultId, itemId) => {
         const item = state.items.get(itemId);
         if (!item) throw new Error(`Item not found: ${itemId}`);

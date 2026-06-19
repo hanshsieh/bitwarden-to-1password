@@ -5,6 +5,7 @@ import type {
   ItemCreateParams,
   ItemField,
   ItemFieldType,
+  ItemListFilter,
   ItemOverview,
   ItemsDeleteAllResponse,
   ItemsGetAllResponse,
@@ -25,7 +26,7 @@ export interface OnePasswordClient {
     list(): Promise<VaultOverview[]>;
   };
   items: {
-    list(vaultId: string): Promise<ItemOverview[]>;
+    list(vaultId: string, ...filters: ItemListFilter[]): Promise<ItemOverview[]>;
     get(vaultId: string, itemId: string): Promise<Item>;
     getAll(vaultId: string, itemIds: string[]): Promise<ItemsGetAllResponse>;
     create(params: ItemCreateParams): Promise<Item>;
