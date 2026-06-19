@@ -39,6 +39,7 @@ describe("migrator", () => {
     expect(summary.failed).toBe(0);
     expect(summary.aborted).toBe(false);
     expect(client.items.create).not.toHaveBeenCalled();
+    expect(client.items.createAll).not.toHaveBeenCalled();
   });
 
   it("creates items when no matches exist", async () => {
@@ -52,7 +53,15 @@ describe("migrator", () => {
 
     expect(summary.created).toBe(5);
     expect(summary.failed).toBe(0);
-    expect(client.items.create).toHaveBeenCalledTimes(5);
+    expect(client.items.create).not.toHaveBeenCalled();
+    expect(client.items.createAll).toHaveBeenCalledTimes(1);
+    expect(client.items.createAll).toHaveBeenCalledWith(
+      "vault-1",
+      expect.arrayContaining([
+        expect.objectContaining({ title: expect.any(String) }),
+      ]),
+    );
+    expect(client.items.createAll.mock.calls[0]![1]).toHaveLength(5);
   });
 
   it("skips matching items with skip strategy", async () => {
@@ -74,7 +83,9 @@ describe("migrator", () => {
 
     expect(summary.skipped).toBe(1);
     expect(summary.created).toBe(4);
-    expect(client.items.create).toHaveBeenCalledTimes(4);
+    expect(client.items.create).not.toHaveBeenCalled();
+    expect(client.items.createAll).toHaveBeenCalledTimes(1);
+    expect(client.items.createAll.mock.calls[0]![1]).toHaveLength(4);
   });
 
   it("aborts when a match exists and strategy is abort", async () => {
@@ -97,6 +108,7 @@ describe("migrator", () => {
     expect(summary.aborted).toBe(true);
     expect(summary.created).toBe(0);
     expect(client.items.create).not.toHaveBeenCalled();
+    expect(client.items.createAll).not.toHaveBeenCalled();
   });
 
   it("updates a single matching item to match the export", async () => {

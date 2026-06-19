@@ -1,10 +1,13 @@
 import Bottleneck from "bottleneck";
-import type { ItemsGetAllResponse } from "@1password/sdk";
+import type { ItemCreateParams, ItemsGetAllResponse, ItemsUpdateAllResponse } from "@1password/sdk";
 import { chunk } from "../utils/chunk.js";
 import type { OnePasswordClient } from "./types.js";
 
 /** Maximum item IDs per {@link OnePasswordClient.items.getAll} request. */
 export const OP_ITEMS_GET_ALL_BATCH_SIZE = 50;
+
+/** Maximum items per {@link OnePasswordClient.items.createAll} request. */
+export const OP_ITEMS_CREATE_ALL_BATCH_SIZE = 100;
 
 /** Default hourly read limit for 1Password Business service accounts. */
 export const OP_DEFAULT_READS_PER_HOUR = 10_000;
@@ -84,6 +87,8 @@ export function createRateLimitedClient(
       getAll: (vaultId, itemIds) =>
         scheduleRead(() => getAllInBatches(client, vaultId, itemIds)),
       create: (params) => scheduleWrite(() => client.items.create(params)),
+      createAll: (vaultId, params) =>
+        scheduleWrite(() => createAllInBatches(client, vaultId, params)),
       put: (item) => scheduleWrite(() => client.items.put(item)),
       delete: (vaultId, itemId) =>
         scheduleWrite(() => client.items.delete(vaultId, itemId)),
@@ -115,6 +120,24 @@ async function getAllInBatches(
   const individualResponses: ItemsGetAllResponse["individualResponses"] = [];
   for (const batch of chunk(itemIds, OP_ITEMS_GET_ALL_BATCH_SIZE)) {
     const response = await client.items.getAll(vaultId, batch);
+    individualResponses.push(...response.individualResponses);
+  }
+
+  return { individualResponses };
+}
+
+async function createAllInBatches(
+  client: OnePasswordClient,
+  vaultId: string,
+  params: ItemCreateParams[],
+): Promise<ItemsUpdateAllResponse> {
+  if (params.length <= OP_ITEMS_CREATE_ALL_BATCH_SIZE) {
+    return client.items.createAll(vaultId, params);
+  }
+
+  const individualResponses: ItemsUpdateAllResponse["individualResponses"] = [];
+  for (const batch of chunk(params, OP_ITEMS_CREATE_ALL_BATCH_SIZE)) {
+    const response = await client.items.createAll(vaultId, batch);
     individualResponses.push(...response.individualResponses);
   }
 

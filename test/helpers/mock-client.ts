@@ -9,6 +9,7 @@ import {
   type ItemOverview,
   type ItemsDeleteAllResponse,
   type ItemsGetAllResponse,
+  type ItemsUpdateAllResponse,
   type VaultOverview,
 } from "@1password/sdk";
 import { vi } from "vitest";
@@ -56,9 +57,12 @@ export function createMockClient(
     state.overviews = [...state.items.values()].map(itemToOverview);
   }
 
-  const create = vi.fn(async (params: ItemCreateParams) => {
-    const item: Item = {
-      id: `created-${create.mock.calls.length}`,
+  let createCount = 0;
+
+  const buildCreatedItem = (params: ItemCreateParams): Item => {
+    createCount++;
+    return {
+      id: `created-${createCount}`,
       title: params.title,
       category: params.category,
       vaultId: params.vaultId,
@@ -72,9 +76,36 @@ export function createMockClient(
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+  };
+
+  const create = vi.fn(async (params: ItemCreateParams) => {
+    const item = buildCreatedItem(params);
     state.items.set(item.id, item);
     state.overviews.push(itemToOverview(item));
     return structuredClone(item);
+  });
+
+  const createAll = vi.fn(async (vaultId: string, params: ItemCreateParams[]) => {
+    const individualResponses: ItemsUpdateAllResponse["individualResponses"] = [];
+
+    for (const itemParams of params) {
+      if (itemParams.vaultId !== vaultId) {
+        individualResponses.push({
+          error: {
+            type: "itemValidationError",
+            message: `vaultId mismatch: expected ${vaultId}, received ${itemParams.vaultId}`,
+          },
+        });
+        continue;
+      }
+
+      const item = buildCreatedItem(itemParams);
+      state.items.set(item.id, item);
+      state.overviews.push(itemToOverview(item));
+      individualResponses.push({ content: structuredClone(item) });
+    }
+
+    return { individualResponses };
   });
 
   const attach = vi.fn(async (item: Item, fileParams: FileCreateParams) => {
@@ -115,6 +146,7 @@ export function createMockClient(
         return { individualResponses };
       }),
       create,
+      createAll,
       put: vi.fn(async (item: Item) => {
         state.items.set(item.id, structuredClone(item));
         const idx = state.overviews.findIndex((o) => o.id === item.id);

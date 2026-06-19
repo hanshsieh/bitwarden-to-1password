@@ -8,6 +8,7 @@ import type {
   ItemOverview,
   ItemsDeleteAllResponse,
   ItemsGetAllResponse,
+  ItemsUpdateAllResponse,
   ItemSection,
   VaultOverview,
 } from "@1password/sdk";
@@ -28,6 +29,10 @@ export interface OnePasswordClient {
     get(vaultId: string, itemId: string): Promise<Item>;
     getAll(vaultId: string, itemIds: string[]): Promise<ItemsGetAllResponse>;
     create(params: ItemCreateParams): Promise<Item>;
+    createAll(
+      vaultId: string,
+      params: ItemCreateParams[],
+    ): Promise<ItemsUpdateAllResponse>;
     put(item: Item): Promise<Item>;
     delete(vaultId: string, itemId: string): Promise<void>;
     deleteAll(

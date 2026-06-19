@@ -31,6 +31,22 @@ export interface MigrateOptions {
   dryRun: boolean;
 }
 
+interface PendingCreateWork {
+  sourceItem: ParsedBitwardenExport["items"][number];
+  mapped: MappedItem;
+}
+
+interface PendingUpdateWork {
+  sourceItem: ParsedBitwardenExport["items"][number];
+  mapped: MappedItem;
+  targetItemId: string;
+}
+
+type ItemClassification =
+  | { action: "create"; mapped: MappedItem }
+  | { action: "update"; mapped: MappedItem; targetItemId: string }
+  | { action: "abort" };
+
 /**
  * Orchestrates a full Bitwarden export → 1Password vault migration.
  *
@@ -71,10 +87,13 @@ export class Migrator {
       `Migrating ${exportData.items.length} item(s) (skipped ${exportData.skippedDeleted} deleted, ${exportData.skippedUnsupported} unsupported).`,
     );
 
+    const pendingCreates: PendingCreateWork[] = [];
+    const pendingUpdates: PendingUpdateWork[] = [];
+
     for (const item of exportData.items) {
       if (summary.aborted) break;
 
-      await this.processItem(
+      const classification = this.classifyItem(
         item,
         exportData,
         options,
@@ -82,6 +101,62 @@ export class Migrator {
         matchIndex,
         summary,
       );
+      if (!classification) {
+        continue;
+      }
+
+      switch (classification.action) {
+        case "abort":
+          summary.aborted = true;
+          break;
+        case "create":
+          pendingCreates.push({
+            sourceItem: item,
+            mapped: classification.mapped,
+          });
+          break;
+        case "update":
+          pendingUpdates.push({
+            sourceItem: item,
+            mapped: classification.mapped,
+            targetItemId: classification.targetItemId,
+          });
+          break;
+      }
+
+      if (summary.aborted) {
+        break;
+      }
+    }
+
+    if (!options.dryRun && !summary.aborted) {
+      await this.createItemsInBatches(
+        pendingCreates,
+        exportData,
+        options.vaultId,
+        attachmentScanner,
+        matchIndex,
+        summary,
+      );
+
+      for (const pending of pendingUpdates) {
+        try {
+          await this.updateItem(
+            pending.sourceItem,
+            exportData,
+            options.vaultId,
+            pending.targetItemId,
+            pending.mapped,
+            attachmentScanner,
+            matchIndex,
+            summary,
+          );
+        } catch (error) {
+          summary.failed++;
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`failed: ${pending.sourceItem.name} — ${message}`);
+        }
+      }
     }
 
     summary.fidoCredentialsSkipped = this.collectFidoCredentialSkippedItems(
@@ -95,15 +170,18 @@ export class Migrator {
     return summary;
   }
 
-  /** Process one export cipher: decide action, create/merge/skip, upload files. */
-  private async processItem(
+  /**
+   * Classify one export cipher and apply skip/abort/dry-run handling.
+   * Returns `undefined` when the item needs no further work (skip or dry-run).
+   */
+  private classifyItem(
     item: ParsedBitwardenExport["items"][number],
     exportData: ParsedBitwardenExport,
     options: MigrateOptions,
     attachmentScanner: BitwardenAttachmentScanner,
     matchIndex: MatchIndex,
     summary: MigrationSummary,
-  ): Promise<void> {
+  ): ItemClassification | undefined {
     const attachments = attachmentScanner.scanForItem(item.id);
     const mapped = this.itemMapper.map(
       item,
@@ -120,14 +198,13 @@ export class Migrator {
 
     if (decision.action === "abort") {
       console.error(`Aborting migration: duplicate match for "${item.name}".`);
-      summary.aborted = true;
-      return;
+      return { action: "abort" };
     }
 
     if (decision.action === "skip") {
       console.log(`skip: ${item.name}`);
       summary.skipped++;
-      return;
+      return undefined;
     }
 
     if (options.dryRun) {
@@ -137,62 +214,90 @@ export class Migrator {
         this.recordNonAsciiTagsSkippedForExport(item, exportData, summary);
       }
       if (decision.action === "update") summary.updated++;
+      return undefined;
+    }
+
+    if (decision.action === "create") {
+      return { action: "create", mapped };
+    }
+
+    if (decision.action === "update" && decision.targetItemId) {
+      return {
+        action: "update",
+        mapped,
+        targetItemId: decision.targetItemId,
+      };
+    }
+
+    return undefined;
+  }
+
+  private async createItemsInBatches(
+    pendingCreates: PendingCreateWork[],
+    exportData: ParsedBitwardenExport,
+    vaultId: string,
+    attachmentScanner: BitwardenAttachmentScanner,
+    matchIndex: MatchIndex,
+    summary: MigrationSummary,
+  ): Promise<void> {
+    if (pendingCreates.length === 0) {
       return;
     }
 
-    try {
-      if (decision.action === "create") {
-        await this.createItem(
-          item,
-          exportData,
-          mapped,
-          options.vaultId,
-          attachmentScanner,
-          summary,
-        );
-      } else if (decision.action === "update" && decision.targetItemId) {
-        await this.updateItem(
-          item,
-          exportData,
-          options.vaultId,
-          decision.targetItemId,
-          mapped,
-          attachmentScanner,
-          matchIndex,
-          summary,
-        );
+    const response = await this.client.items.createAll(
+      vaultId,
+      pendingCreates.map((pending) => pending.mapped.params),
+    );
+
+    for (let index = 0; index < pendingCreates.length; index++) {
+      const pending = pendingCreates[index]!;
+      const result = response.individualResponses[index];
+
+      if (!result?.content) {
+        summary.failed++;
+        const message = this.formatCreateAllError(result?.error);
+        console.error(`failed: ${pending.sourceItem.name} — ${message}`);
+        continue;
       }
-    } catch (error) {
-      summary.failed++;
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`failed: ${item.name} — ${message}`);
+
+      const created = result.content;
+      summary.created++;
+      this.recordNonAsciiTagsSkippedForExport(
+        pending.sourceItem,
+        exportData,
+        summary,
+      );
+      console.log(`created: ${pending.sourceItem.name} (${created.id})`);
+      MergeEngine.setCachedItem(matchIndex, created);
+
+      try {
+        const withAttachments = await this.uploadAttachments(
+          created,
+          pending.mapped,
+          attachmentScanner,
+          summary,
+        );
+        await this.applyArchivedState(
+          vaultId,
+          withAttachments.id,
+          pending.sourceItem,
+          summary,
+        );
+      } catch (error) {
+        summary.failed++;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`failed: ${pending.sourceItem.name} — ${message}`);
+      }
     }
   }
 
-  private async createItem(
-    sourceItem: ParsedBitwardenExport["items"][number],
-    exportData: ParsedBitwardenExport,
-    mapped: MappedItem,
-    vaultId: string,
-    attachmentScanner: BitwardenAttachmentScanner,
-    summary: MigrationSummary,
-  ): Promise<void> {
-    const created = await this.client.items.create(mapped.params);
-    summary.created++;
-    this.recordNonAsciiTagsSkippedForExport(sourceItem, exportData, summary);
-    console.log(`created: ${sourceItem.name} (${created.id})`);
-    const withAttachments = await this.uploadAttachments(
-      created,
-      mapped,
-      attachmentScanner,
-      summary,
-    );
-    await this.applyArchivedState(
-      vaultId,
-      withAttachments.id,
-      sourceItem,
-      summary,
-    );
+  private formatCreateAllError(
+    error: { type: string; message?: string } | undefined,
+  ): string {
+    if (!error) {
+      return "unknown error";
+    }
+    return error.message ?? error.type;
   }
 
   private async updateItem(
