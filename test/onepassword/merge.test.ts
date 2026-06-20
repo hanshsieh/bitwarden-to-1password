@@ -26,7 +26,10 @@ describe("merge engine", () => {
       items: [makeLoginItem("existing-1", "Example Login", "user@example.com")],
     });
 
-    const matchIndex = await new MergeEngine(client).buildIndex("vault-1");
+    const matchIndex = await new MergeEngine(client).buildIndex(
+      "vault-1",
+      new Set(["Example Login"]),
+    );
     const key = MergeEngine.buildMatchKey(
       ItemCategory.Login,
       "Example Login",
@@ -36,30 +39,107 @@ describe("merge engine", () => {
     expect(matchIndex.itemsById.get("existing-1")?.title).toBe("Example Login");
   });
 
-  it("includes archived vault items in the match index", async () => {
+  it("excludes archived vault items from the match index", async () => {
     const archivedItem = makeLoginItem(
       "archived-1",
       "Archived Login",
       "user@example.com",
     );
+    const activeItem = makeLoginItem(
+      "active-1",
+      "Active Login",
+      "user@example.com",
+    );
     const { client } = createMockClient({
-      items: [archivedItem],
+      items: [archivedItem, activeItem],
       overviews: [
         makeOverview({
           id: "archived-1",
           title: "Archived Login",
           state: ItemState.Archived,
         }),
+        makeOverview({
+          id: "active-1",
+          title: "Active Login",
+          state: ItemState.Active,
+        }),
       ],
     });
 
-    const matchIndex = await new MergeEngine(client).buildIndex("vault-1");
-    const key = MergeEngine.buildMatchKey(
+    const matchIndex = await new MergeEngine(client).buildIndex(
+      "vault-1",
+      new Set(["Archived Login", "Active Login"]),
+    );
+    const archivedKey = MergeEngine.buildMatchKey(
       ItemCategory.Login,
       "Archived Login",
       "user@example.com",
     );
-    expect(matchIndex.index.get(key)).toEqual(["archived-1"]);
+    const activeKey = MergeEngine.buildMatchKey(
+      ItemCategory.Login,
+      "Active Login",
+      "user@example.com",
+    );
+    expect(matchIndex.index.get(archivedKey)).toBeUndefined();
+    expect(matchIndex.index.get(activeKey)).toEqual(["active-1"]);
+  });
+
+  it("lists only active items when building index", async () => {
+    const activeItem = makeLoginItem(
+      "active-1",
+      "Shared Title",
+      "user@example.com",
+    );
+    const { client } = createMockClient({
+      items: [activeItem],
+      overviews: [
+        makeOverview({
+          id: "archived-1",
+          title: "Shared Title",
+          state: ItemState.Archived,
+        }),
+        makeOverview({
+          id: "active-1",
+          title: "Shared Title",
+          state: ItemState.Active,
+        }),
+      ],
+    });
+
+    const matchIndex = await new MergeEngine(client).buildIndex(
+      "vault-1",
+      new Set(["Shared Title"]),
+    );
+    const key = MergeEngine.buildMatchKey(
+      ItemCategory.Login,
+      "Shared Title",
+      "user@example.com",
+    );
+    expect(matchIndex.index.get(key)).toEqual(["active-1"]);
+    expect(client.items.getAll).toHaveBeenCalledWith("vault-1", ["active-1"]);
+  });
+
+  it("title-filters getAll to export titles", async () => {
+    const relevant = makeLoginItem(
+      "relevant-1",
+      "Example Login",
+      "user@example.com",
+    );
+    const extra = makeLoginItem(
+      "extra-1",
+      "Unrelated Item",
+      "other@example.com",
+    );
+    const { client } = createMockClient({
+      items: [relevant, extra],
+    });
+
+    await new MergeEngine(client).buildIndex(
+      "vault-1",
+      new Set(["Example Login"]),
+    );
+
+    expect(client.items.getAll).toHaveBeenCalledWith("vault-1", ["relevant-1"]);
   });
 
   it("decideMergeAction handles all strategies", () => {

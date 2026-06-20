@@ -9,7 +9,7 @@ import {
   DEFAULT_SECTION_ID,
   OnePasswordItemMapper,
 } from "../../src/onepassword/item-mapper.js";
-import { Migrator } from "../../src/onepassword/migrator.js";
+import { MigrateOptions, Migrator } from "../../src/onepassword/migrator.js";
 import { attachmentFieldId } from "../../src/utils/attachment-field-id.js";
 import { createMockClient, makeLoginItem } from "../helpers/mock-client.js";
 
@@ -18,9 +18,15 @@ const mapper = new OnePasswordItemMapper();
 
 async function migrate(
   client: ReturnType<typeof createMockClient>["client"],
-  options: Parameters<Migrator["migrate"]>[0],
+  options: Partial<MigrateOptions> &
+    Pick<MigrateOptions, "bwDir" | "vaultId">,
 ) {
-  return new Migrator(client).migrate(options);
+  return new Migrator(client).migrate({
+    mergeStrategy: "skip",
+    dryRun: false,
+    includeState: false,
+    ...options,
+  });
 }
 
 describe("migrator", () => {
@@ -621,7 +627,7 @@ describe("migrator", () => {
     expect(client.items.get).not.toHaveBeenCalled();
   });
 
-  it("archives items when export has archivedDate", async () => {
+  it("archives items when export has archivedDate and includeState", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(
       join(dir, "data.json"),
@@ -642,8 +648,7 @@ describe("migrator", () => {
     const summary = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
-      mergeStrategy: "skip",
-      dryRun: false,
+      includeState: true,
     });
 
     expect(summary.created).toBe(1);
@@ -652,7 +657,112 @@ describe("migrator", () => {
     expect(client.items.archive).toHaveBeenCalledWith("vault-1", "created-1");
   });
 
-  it("does not recreate archived items on a second run", async () => {
+  it("does not archive without includeState", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+    });
+
+    expect(summary.created).toBe(1);
+    expect(summary.archived).toBe(0);
+    expect(client.items.archive).not.toHaveBeenCalled();
+  });
+
+  it("does not archive skipped items with includeState and skip strategy", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const existing = makeLoginItem("existing-1", "Archived Note", "");
+    existing.category = ItemCategory.SecureNote;
+    existing.fields = [];
+    existing.websites = [];
+
+    const { client } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      includeState: true,
+    });
+
+    expect(summary.skipped).toBe(1);
+    expect(summary.archived).toBe(0);
+    expect(client.items.archive).not.toHaveBeenCalled();
+  });
+
+  it("archives state-only diff under merge and includeState", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const parsed = parseExport(dir);
+    const bwItem = parsed.items[0]!;
+    const mapped = mapper.map(bwItem, parsed, "vault-1");
+    const existing = makeLoginItem("existing-1", "Archived Note", "");
+    existing.category = ItemCategory.SecureNote;
+    existing.fields = mapped.params.fields ?? [];
+    existing.sections = mapped.params.sections ?? [];
+    existing.notes = mapped.params.notes ?? "";
+    existing.tags = mapped.params.tags ?? [];
+    existing.websites = mapped.params.websites ?? [];
+
+    const { client } = createMockClient({ items: [existing] });
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      includeState: true,
+    });
+
+    expect(summary.unchanged).toBe(1);
+    expect(summary.updated).toBe(0);
+    expect(client.items.put).not.toHaveBeenCalled();
+    expect(client.items.archive).toHaveBeenCalledTimes(1);
+    expect(client.items.archive).toHaveBeenCalledWith("vault-1", "existing-1");
+  });
+
+  it("does not recreate items on a second run without includeState", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     writeFileSync(
       join(dir, "data.json"),
@@ -673,21 +783,53 @@ describe("migrator", () => {
     const first = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
-      mergeStrategy: "skip",
-      dryRun: false,
     });
     expect(first.created).toBe(1);
-    expect(first.archived).toBe(1);
+    expect(first.archived).toBe(0);
 
     const second = await migrate(client, {
       bwDir: dir,
       vaultId: "vault-1",
-      mergeStrategy: "skip",
-      dryRun: false,
     });
     expect(second.created).toBe(0);
     expect(second.skipped).toBe(1);
     expect(client.items.createAll).toHaveBeenCalledTimes(1);
+    expect(client.items.archive).not.toHaveBeenCalled();
+  });
+
+  it("archives on phase two with merge and includeState", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          {
+            type: 2,
+            name: "Archived Note",
+            secureNote: { type: 0 },
+            archivedDate: "2026-06-13T08:16:07.105Z",
+          },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient();
+    await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+    });
+
+    const second = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      includeState: true,
+    });
+
+    expect(second.unchanged).toBe(1);
+    expect(second.archived).toBe(1);
     expect(client.items.archive).toHaveBeenCalledTimes(1);
+    expect(client.items.archive).toHaveBeenCalledWith("vault-1", "created-1");
   });
 });

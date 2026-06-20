@@ -63,27 +63,36 @@ export class MergeEngine {
   }
 
   /**
-   * Fetch all items in the vault and index them by (category, title, username).
-   * Requires a full item fetch because overviews do not include username fields.
+   * Fetch active vault items whose titles appear in the export and index them
+   * by (category, title, username). Archived items are excluded because the
+   * SDK cannot get or put them. Requires a full item fetch because overviews
+   * do not include username fields.
    */
-  async buildIndex(vaultId: string): Promise<MatchIndex> {
+  async buildIndex(
+    vaultId: string,
+    exportTitles: Set<string>,
+  ): Promise<MatchIndex> {
     const overviews = await this.client.items.list(vaultId, {
       type: "ByState",
-      content: { active: true, archived: true },
+      content: { active: true, archived: false },
     });
     const index = new Map<MatchKey, string[]>();
     const itemsById = new Map<string, Item>();
     const statesById = new Map<string, ItemState>();
 
-    if (overviews.length === 0) {
+    const matchingOverviews = overviews.filter((overview) =>
+      exportTitles.has(overview.title),
+    );
+
+    if (matchingOverviews.length === 0) {
       return { index, itemsById, statesById };
     }
 
-    for (const overview of overviews) {
+    for (const overview of matchingOverviews) {
       statesById.set(overview.id, overview.state);
     }
 
-    const ids = overviews.map((o) => o.id);
+    const ids = matchingOverviews.map((o) => o.id);
     const response = await this.client.items.getAll(vaultId, ids);
 
     for (const entry of response.individualResponses) {

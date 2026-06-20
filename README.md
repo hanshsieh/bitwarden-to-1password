@@ -113,6 +113,44 @@ npm start -- migrate \
   --dry-run
 ```
 
+#### Recommended migration workflow
+
+Because the 1Password SDK cannot unarchive items, syncing archive state is a **one-way** action. Run migration in two phases:
+
+1. **First run — content only** (no `--include-state`):
+
+   ```bash
+   npm start -- migrate \
+     --bw-dir /path/to/extracted-bitwarden-export \
+     --vault "Bitwarden Migration"
+   ```
+
+2. **Verify** imported items in 1Password. Adjust the export or re-run with `--merge-strategy merge` if content needs fixing.
+
+3. **Second run — sync archive state** (irreversible). Use `--merge-strategy merge` so existing items are processed (not skipped) and can be archived:
+
+   ```bash
+   npm start -- migrate \
+     --bw-dir /path/to/extracted-bitwarden-export \
+     --vault "Bitwarden Migration" \
+     --merge-strategy merge \
+     --include-state
+   ```
+
+`--include-state` archives Bitwarden items that have `archivedDate` in the export. It only affects items **created** or **updated** in that run. With `--merge-strategy skip`, matched items are skipped and **will not** be archived — phase 2 therefore requires `merge`.
+
+#### Archive state sync
+
+Use `--include-state` to move corresponding 1Password items into the Archive when the Bitwarden export marks them as archived. Without this flag, all items are imported as active regardless of their Bitwarden archive state.
+
+```bash
+npm start -- migrate \
+  --bw-dir /path/to/extracted-bitwarden-export \
+  --vault "Bitwarden Migration" \
+  --merge-strategy merge \
+  --include-state
+```
+
 #### Item type mapping
 
 Bitwarden and 1Password both support multiple item types. This tool maps Bitwarden cipher types to the closest 1Password category:

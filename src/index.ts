@@ -33,6 +33,11 @@ program
     "skip",
   )
   .option("--dry-run", "Preview actions without writing to 1Password", false)
+  .option(
+    "--include-state",
+    "Sync archived state to 1Password Archive (one-way; cannot unarchive)",
+    false,
+  )
   .requiredOption(
     "--vault <id-or-title>",
     "Target vault ID or title substring (case-insensitive)",
@@ -51,6 +56,7 @@ program
         bwDir: opts.bwDir,
         mergeStrategy: strategy as "skip" | "merge" | "abort",
         dryRun: Boolean(opts.dryRun),
+        includeState: Boolean(opts.includeState),
         vault: opts.vault,
       });
       process.exit(code);

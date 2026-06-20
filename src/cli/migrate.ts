@@ -7,6 +7,7 @@ export interface MigrateCommandOptions {
   bwDir: string;
   mergeStrategy: MergeStrategy;
   dryRun: boolean;
+  includeState: boolean;
   vault: string;
 }
 
@@ -33,6 +34,7 @@ export class MigrateCommand {
       vaultId: vault.id,
       mergeStrategy: options.mergeStrategy,
       dryRun: options.dryRun,
+      includeState: options.includeState,
     });
 
     return summary.aborted ? 1 : 0;

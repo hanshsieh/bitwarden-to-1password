@@ -2,7 +2,7 @@ import type { Item } from "@1password/sdk";
 import { ItemState } from "@1password/sdk";
 import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
 import { BitwardenExportParser } from "../bitwarden/export-parser.js";
-import type { ParsedBitwardenExport } from "../bitwarden/types.js";
+import type { ParsedBitwardenExport, ParsedBitwardenItem } from "../bitwarden/types.js";
 import {
   hasFido2Credentials,
   hasLinkedCustomFields,
@@ -30,15 +30,21 @@ export interface MigrateOptions {
   vaultId: string;
   mergeStrategy: MergeStrategy;
   dryRun: boolean;
+  includeState: boolean;
+}
+
+interface ArchiveCandidate {
+  sourceItem: ParsedBitwardenItem;
+  itemId: string;
 }
 
 interface PendingCreateWork {
-  sourceItem: ParsedBitwardenExport["items"][number];
+  sourceItem: ParsedBitwardenItem;
   mapped: MappedItem;
 }
 
 interface PendingUpdateWork {
-  sourceItem: ParsedBitwardenExport["items"][number];
+  sourceItem: ParsedBitwardenItem;
   mapped: MappedItem;
   targetItemId: string;
 }
@@ -80,7 +86,11 @@ export class Migrator {
   async migrate(options: MigrateOptions): Promise<MigrationSummary> {
     const exportData = this.exportParser.parse(options.bwDir);
     const attachmentScanner = new BitwardenAttachmentScanner(options.bwDir);
-    const matchIndex = await this.mergeEngine.buildIndex(options.vaultId);
+    const exportTitles = new Set(exportData.items.map((item) => item.name));
+    const matchIndex = await this.mergeEngine.buildIndex(
+      options.vaultId,
+      exportTitles,
+    );
 
     const summary = this.emptySummary();
 
@@ -90,6 +100,7 @@ export class Migrator {
 
     const pendingCreates: PendingCreateWork[] = [];
     const pendingUpdates: PendingUpdateWork[] = [];
+    const archiveCandidates: ArchiveCandidate[] = [];
 
     for (const item of exportData.items) {
       if (summary.aborted) break;
@@ -138,25 +149,39 @@ export class Migrator {
         attachmentScanner,
         matchIndex,
         summary,
+        archiveCandidates,
       );
 
       for (const pending of pendingUpdates) {
         try {
-          await this.updateItem(
+          const itemId = await this.updateItem(
             pending.sourceItem,
             exportData,
-            options.vaultId,
+            options,
             pending.targetItemId,
             pending.mapped,
             attachmentScanner,
             matchIndex,
             summary,
           );
+          archiveCandidates.push({
+            sourceItem: pending.sourceItem,
+            itemId,
+          });
         } catch (error) {
           summary.failed++;
           const message = error instanceof Error ? error.message : String(error);
           console.error(`failed: ${pending.sourceItem.name} — ${message}`);
         }
+      }
+
+      if (options.includeState) {
+        await this.archiveCandidates(
+          options.vaultId,
+          archiveCandidates,
+          summary,
+          matchIndex,
+        );
       }
     }
 
@@ -209,7 +234,7 @@ export class Migrator {
     }
 
     if (options.dryRun) {
-      this.logDryRunAction(decision.action, item, attachments);
+      this.logDryRunAction(decision.action, item, attachments, options.includeState);
       if (decision.action === "create") {
         summary.created++;
         this.recordNonAsciiTagsSkippedForExport(item, exportData, summary);
@@ -240,6 +265,7 @@ export class Migrator {
     attachmentScanner: BitwardenAttachmentScanner,
     matchIndex: MatchIndex,
     summary: MigrationSummary,
+    archiveCandidates: ArchiveCandidate[],
   ): Promise<void> {
     if (pendingCreates.length === 0) {
       return;
@@ -270,20 +296,17 @@ export class Migrator {
       );
       console.log(`created: ${pending.sourceItem.name} (${created.id})`);
       MergeEngine.setCachedItem(matchIndex, created);
+      archiveCandidates.push({
+        sourceItem: pending.sourceItem,
+        itemId: created.id,
+      });
 
       try {
-        const withAttachments = await this.uploadAttachments(
+        await this.uploadAttachments(
           created,
           pending.mapped,
           attachmentScanner,
           summary,
-        );
-        await this.applyArchivedState(
-          vaultId,
-          withAttachments.id,
-          pending.sourceItem,
-          summary,
-          matchIndex,
         );
       } catch (error) {
         summary.failed++;
@@ -305,13 +328,13 @@ export class Migrator {
   private async updateItem(
     sourceItem: ParsedBitwardenExport["items"][number],
     exportData: ParsedBitwardenExport,
-    vaultId: string,
+    options: MigrateOptions,
     targetItemId: string,
     mapped: MappedItem,
     attachmentScanner: BitwardenAttachmentScanner,
     matchIndex: MatchIndex,
     summary: MigrationSummary,
-  ): Promise<void> {
+  ): Promise<string> {
     const existing = MergeEngine.getCachedItem(matchIndex, targetItemId);
     const expectedFiles = MergeEngine.expectedFilesFromMapped(mapped);
     const desired = MergeEngine.buildDesiredItem(
@@ -319,13 +342,15 @@ export class Migrator {
       mapped.params,
       expectedFiles,
     );
-    const matchOptions = {
-      actualState:
-        matchIndex.statesById.get(targetItemId) ?? ItemState.Active,
-      desiredState: isArchivedItem(sourceItem)
-        ? ItemState.Archived
-        : ItemState.Active,
-    };
+    const matchOptions = options.includeState
+      ? {
+          actualState:
+            matchIndex.statesById.get(targetItemId) ?? ItemState.Active,
+          desiredState: isArchivedItem(sourceItem)
+            ? ItemState.Archived
+            : ItemState.Active,
+        }
+      : undefined;
 
     let current = existing;
     const matchesDesired = MergeEngine.itemsMatchDesired(
@@ -368,19 +393,34 @@ export class Migrator {
       if (!fieldContentMatches || !filesMatch) {
         summary.updated++;
         console.log(`updated: ${sourceItem.name} (${current.id})`);
+      } else {
+        summary.unchanged++;
+        console.log(`unchanged: ${sourceItem.name} (${current.id})`);
       }
     } else {
       summary.unchanged++;
       console.log(`unchanged: ${sourceItem.name} (${existing.id})`);
     }
 
-    await this.applyArchivedState(
-      vaultId,
-      current.id,
-      sourceItem,
-      summary,
-      matchIndex,
-    );
+    return current.id;
+  }
+
+  /** Archive migrated items whose Bitwarden source was archived. */
+  private async archiveCandidates(
+    vaultId: string,
+    candidates: ArchiveCandidate[],
+    summary: MigrationSummary,
+    matchIndex: MatchIndex,
+  ): Promise<void> {
+    for (const candidate of candidates) {
+      await this.applyArchivedState(
+        vaultId,
+        candidate.itemId,
+        candidate.sourceItem,
+        summary,
+        matchIndex,
+      );
+    }
   }
 
   /**
@@ -517,8 +557,10 @@ export class Migrator {
     action: "create" | "update",
     item: ParsedBitwardenExport["items"][number],
     attachments: MappedItem["attachments"],
+    includeState: boolean,
   ): void {
-    const archivedSuffix = isArchivedItem(item) ? " (will archive)" : "";
+    const archivedSuffix =
+      includeState && isArchivedItem(item) ? " (will archive)" : "";
     console.log(`${action}: ${item.name}${archivedSuffix}`);
     if (attachments.length > 0) {
       console.log(
