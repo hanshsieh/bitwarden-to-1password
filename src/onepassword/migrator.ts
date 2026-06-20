@@ -1,4 +1,5 @@
 import type { Item } from "@1password/sdk";
+import { ItemState } from "@1password/sdk";
 import { BitwardenAttachmentScanner } from "../bitwarden/attachment-scanner.js";
 import { BitwardenExportParser } from "../bitwarden/export-parser.js";
 import type { ParsedBitwardenExport } from "../bitwarden/types.js";
@@ -12,7 +13,7 @@ import {
   hasNonAsciiBitwardenLabels,
 } from "./tags.js";
 import {
-  ATTACHMENTS_SECTION_ID,
+  DEFAULT_SECTION_ID,
   OnePasswordItemMapper,
 } from "./item-mapper.js";
 import { MergeEngine, type MatchIndex } from "./merge-engine.js";
@@ -282,6 +283,7 @@ export class Migrator {
           withAttachments.id,
           pending.sourceItem,
           summary,
+          matchIndex,
         );
       } catch (error) {
         summary.failed++;
@@ -317,8 +319,20 @@ export class Migrator {
       mapped.params,
       expectedFiles,
     );
+    const matchOptions = {
+      actualState:
+        matchIndex.statesById.get(targetItemId) ?? ItemState.Active,
+      desiredState: isArchivedItem(sourceItem)
+        ? ItemState.Archived
+        : ItemState.Active,
+    };
 
     let current = existing;
+    const matchesDesired = MergeEngine.itemsMatchDesired(
+      existing,
+      desired,
+      matchOptions,
+    );
     const fieldContentMatches = MergeEngine.itemContentMatchesDesired(
       existing,
       desired,
@@ -327,33 +341,34 @@ export class Migrator {
       existing.files,
       expectedFiles,
     );
-    const needsUpdate = !fieldContentMatches || !filesMatch;
 
-    if (!fieldContentMatches) {
-      if (hasNonAsciiBitwardenLabels(sourceItem, exportData)) {
-        this.recordNonAsciiTagsSkipped(summary, sourceItem.name);
+    if (!matchesDesired) {
+      if (!fieldContentMatches) {
+        if (hasNonAsciiBitwardenLabels(sourceItem, exportData)) {
+          this.recordNonAsciiTagsSkipped(summary, sourceItem.name);
+        }
+        const toWrite = MergeEngine.applyDesiredContent(
+          structuredClone(existing),
+          desired,
+        );
+        current = await this.client.items.put(toWrite);
+        MergeEngine.setCachedItem(matchIndex, current);
       }
-      const toWrite = MergeEngine.applyDesiredContent(
-        structuredClone(existing),
-        desired,
-      );
-      current = await this.client.items.put(toWrite);
-      MergeEngine.setCachedItem(matchIndex, current);
-    }
 
-    if (!filesMatch) {
-      current = await this.syncAttachments(
-        current,
-        mapped,
-        attachmentScanner,
-        summary,
-      );
-      MergeEngine.setCachedItem(matchIndex, current);
-    }
+      if (!filesMatch) {
+        current = await this.syncAttachments(
+          current,
+          mapped,
+          attachmentScanner,
+          summary,
+        );
+        MergeEngine.setCachedItem(matchIndex, current);
+      }
 
-    if (needsUpdate) {
-      summary.updated++;
-      console.log(`updated: ${sourceItem.name} (${current.id})`);
+      if (!fieldContentMatches || !filesMatch) {
+        summary.updated++;
+        console.log(`updated: ${sourceItem.name} (${current.id})`);
+      }
     } else {
       summary.unchanged++;
       console.log(`unchanged: ${sourceItem.name} (${existing.id})`);
@@ -364,6 +379,7 @@ export class Migrator {
       current.id,
       sourceItem,
       summary,
+      matchIndex,
     );
   }
 
@@ -376,6 +392,7 @@ export class Migrator {
     itemId: string,
     sourceItem: ParsedBitwardenExport["items"][number],
     summary: MigrationSummary,
+    matchIndex?: MatchIndex,
   ): Promise<void> {
     if (!isArchivedItem(sourceItem)) {
       return;
@@ -383,6 +400,13 @@ export class Migrator {
 
     try {
       await this.client.items.archive(vaultId, itemId);
+      if (matchIndex) {
+        MergeEngine.setCachedItemState(
+          matchIndex,
+          itemId,
+          ItemState.Archived,
+        );
+      }
       summary.archived++;
       console.log(`archived: ${sourceItem.name} (${itemId})`);
     } catch (error) {
@@ -432,7 +456,7 @@ export class Migrator {
         current = await this.client.items.files.attach(current, {
           name: attachment.filename,
           content,
-          sectionId: ATTACHMENTS_SECTION_ID,
+          sectionId: DEFAULT_SECTION_ID,
           fieldId,
         });
         summary.attachmentsUploaded++;
@@ -472,7 +496,7 @@ export class Migrator {
         current = await this.client.items.files.attach(current, {
           name: attachment.filename,
           content,
-          sectionId: ATTACHMENTS_SECTION_ID,
+          sectionId: DEFAULT_SECTION_ID,
           fieldId,
         });
         skipFieldIds.add(fieldId);

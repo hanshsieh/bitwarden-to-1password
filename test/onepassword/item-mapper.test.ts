@@ -4,10 +4,8 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
-  ATTACHMENTS_SECTION_ID,
-  CUSTOM_FIELDS_SECTION_ID,
-  CUSTOM_FIELDS_SECTION_TITLE,
-  SSH_KEYS_SECTION_ID,
+  DEFAULT_SECTION,
+  DEFAULT_SECTION_ID,
   OnePasswordItemMapper,
   bitwardenUriMatchToAutofillBehavior,
 } from "../../src/onepassword/item-mapper.js";
@@ -52,14 +50,8 @@ describe("item-mapper", () => {
     const pin = mapped.params.fields?.find((f) => f.title === "Secret PIN");
     expect(pin?.fieldType).toBe(ItemFieldType.Concealed);
     expect(pin?.id).toBe("cust_1");
-    expect(pin?.sectionId).toBe(CUSTOM_FIELDS_SECTION_ID);
-    expect(
-      mapped.params.sections?.some(
-        (s) =>
-          s.id === CUSTOM_FIELDS_SECTION_ID &&
-          s.title === CUSTOM_FIELDS_SECTION_TITLE,
-      ),
-    ).toBe(true);
+    expect(pin?.sectionId).toBe(DEFAULT_SECTION_ID);
+    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
 
     expect(
       mapped.params.fields?.some((f) => f.title.includes("Linked field")),
@@ -115,7 +107,7 @@ describe("item-mapper", () => {
     const ssn = mapped.params.fields?.find((f) => f.title === "SSN");
     expect(ssn?.value).toBe("123-45-6789");
     expect(ssn?.id ?? "").toMatch(/^cust_\d+$/);
-    expect(ssn?.sectionId).toBe(CUSTOM_FIELDS_SECTION_ID);
+    expect(ssn?.sectionId).toBe(DEFAULT_SECTION_ID);
   });
 
   it("maps SSH key private key field", () => {
@@ -125,10 +117,23 @@ describe("item-mapper", () => {
     expect(mapped.params.category).toBe(ItemCategory.SshKey);
     const privateKey = mapped.params.fields?.find((f) => f.id === "private_key");
     expect(privateKey?.fieldType).toBe(ItemFieldType.SshKey);
-    expect(privateKey?.sectionId).toBe(SSH_KEYS_SECTION_ID);
+    expect(privateKey?.sectionId).toBe(DEFAULT_SECTION_ID);
+    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
   });
 
-  it("adds attachment section placeholders", () => {
+  it("always uses the default section for mapped items", () => {
+    const note = parsed.items.find((i) => i.type === 2)!;
+    const mapped = mapper.map(note, parsed, vaultId);
+
+    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(
+      mapped.params.fields?.every(
+        (field) => field.sectionId === DEFAULT_SECTION_ID,
+      ) ?? true,
+    ).toBe(true);
+  });
+
+  it("maps attachment field IDs for upload", () => {
     const login = parsed.items.find((i) => i.type === 1)!;
     const dir = mkdtempSync(join(tmpdir(), "bw-mapper-"));
     const filePath = join(dir, "readme.txt");
@@ -142,9 +147,7 @@ describe("item-mapper", () => {
     ];
     const mapped = mapper.map(login, parsed, vaultId, attachments);
 
-    expect(
-      mapped.params.sections?.some((s) => s.id === ATTACHMENTS_SECTION_ID),
-    ).toBe(true);
+    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
     expect(mapped.attachmentFieldIds.get(filePath)).toBe(
       attachmentFieldId(Buffer.from("hello")),
     );

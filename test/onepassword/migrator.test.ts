@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { AutofillBehavior, ItemCategory, ItemFieldType } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
-  ATTACHMENTS_SECTION_ID,
-  ATTACHMENTS_SECTION_TITLE,
+  DEFAULT_SECTION,
+  DEFAULT_SECTION_ID,
   OnePasswordItemMapper,
 } from "../../src/onepassword/item-mapper.js";
 import { Migrator } from "../../src/onepassword/migrator.js";
@@ -427,10 +427,7 @@ describe("migrator", () => {
     existing.fields = [];
     existing.websites = [];
     existing.sections = [
-      {
-        id: ATTACHMENTS_SECTION_ID,
-        title: ATTACHMENTS_SECTION_TITLE,
-      },
+      DEFAULT_SECTION,
     ];
     existing.files = [
       {
@@ -439,7 +436,7 @@ describe("migrator", () => {
           name: "身分證正面.jpg",
           size: 11,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: frontFieldId,
       },
     ];
@@ -500,10 +497,7 @@ describe("migrator", () => {
     existing.fields = [];
     existing.websites = [];
     existing.sections = [
-      {
-        id: ATTACHMENTS_SECTION_ID,
-        title: ATTACHMENTS_SECTION_TITLE,
-      },
+      DEFAULT_SECTION,
     ];
     existing.files = [
       {
@@ -512,7 +506,7 @@ describe("migrator", () => {
           name: "身分證正面.jpg",
           size: 11,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: "jpg",
       },
       {
@@ -521,7 +515,7 @@ describe("migrator", () => {
           name: "身分證正面.jpg",
           size: 11,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: "attachment_0",
       },
       {
@@ -530,7 +524,7 @@ describe("migrator", () => {
           name: "身分證正面.jpg",
           size: 11,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: frontFieldId,
       },
       {
@@ -539,7 +533,7 @@ describe("migrator", () => {
           name: "身分證背面.jpg",
           size: 10,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: backFieldId,
       },
     ];
@@ -590,10 +584,7 @@ describe("migrator", () => {
     existing.fields = [];
     existing.websites = [];
     existing.sections = [
-      {
-        id: ATTACHMENTS_SECTION_ID,
-        title: ATTACHMENTS_SECTION_TITLE,
-      },
+      DEFAULT_SECTION,
     ];
     existing.files = [
       {
@@ -602,7 +593,7 @@ describe("migrator", () => {
           name: "身分證正面.jpg",
           size: 11,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: frontFieldId,
       },
       {
@@ -611,7 +602,7 @@ describe("migrator", () => {
           name: "身分證背面.jpg",
           size: 10,
         },
-        sectionId: ATTACHMENTS_SECTION_ID,
+        sectionId: DEFAULT_SECTION_ID,
         fieldId: backFieldId,
       },
     ];

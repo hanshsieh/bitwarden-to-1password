@@ -5,14 +5,12 @@ import type {
   ItemField,
   ItemFile,
   ItemSection,
+  ItemState,
   Website,
 } from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
 import { filterSdkSafeTags } from "./tags.js";
-import {
-  OnePasswordItemMapper,
-  ATTACHMENTS_SECTION_ID,
-} from "./item-mapper.js";
+import { DEFAULT_SECTION_ID, OnePasswordItemMapper } from "./item-mapper.js";
 import type {
   MappedItem,
   MergeDecision,
@@ -28,6 +26,14 @@ export interface MatchIndex {
   index: Map<MatchKey, string[]>;
   /** Full items prefetched during index build; updated after writes in the same run. */
   itemsById: Map<string, Item>;
+  /** Item archive/active state from overviews; updated after archive in the same run. */
+  statesById: Map<string, ItemState>;
+}
+
+/** Optional archive-state inputs for {@link MergeEngine.itemsMatchDesired}. */
+export interface ItemMatchOptions {
+  actualState?: ItemState;
+  desiredState?: ItemState;
 }
 
 /**
@@ -67,9 +73,14 @@ export class MergeEngine {
     });
     const index = new Map<MatchKey, string[]>();
     const itemsById = new Map<string, Item>();
+    const statesById = new Map<string, ItemState>();
 
     if (overviews.length === 0) {
-      return { index, itemsById };
+      return { index, itemsById, statesById };
+    }
+
+    for (const overview of overviews) {
+      statesById.set(overview.id, overview.state);
     }
 
     const ids = overviews.map((o) => o.id);
@@ -93,7 +104,16 @@ export class MergeEngine {
       index.set(key, existing);
     }
 
-    return { index, itemsById };
+    return { index, itemsById, statesById };
+  }
+
+  /** Keep archive state in sync after archive in the same migration run. */
+  static setCachedItemState(
+    matchIndex: MatchIndex,
+    itemId: string,
+    state: ItemState,
+  ): void {
+    matchIndex.statesById.set(itemId, state);
   }
 
   /** Return a copy of a prefetched vault item (same isolation as items.get). */
@@ -195,7 +215,7 @@ export class MergeEngine {
         name: attachment.filename,
         size: 0,
       },
-      sectionId: ATTACHMENTS_SECTION_ID,
+      sectionId: DEFAULT_SECTION_ID,
       fieldId:
         mapped.attachmentFieldIds.get(attachment.filePath) ??
         attachment.filename,
@@ -203,21 +223,16 @@ export class MergeEngine {
   }
 
   /**
-   * True when field content matches the desired export state (files excluded).
-   * Section lists are compared by title multiset so orphan sections (e.g.
-   * attachment placeholders with no fields) are still checked.
+   * True when field content matches the desired export state (files and archive
+   * state excluded). Sections are compared in order by id and title. Fields are
+   * compared in order by id, title, type, value, details, and sectionId.
    */
   static itemContentMatchesDesired(actual: Item, desired: Item): boolean {
     return (
       actual.title === desired.title &&
       actual.category === desired.category &&
       (actual.notes ?? "") === (desired.notes ?? "") &&
-      MergeEngine.fieldsEqualStrict(
-        actual.fields,
-        desired.fields,
-        actual.sections,
-        desired.sections,
-      ) &&
+      MergeEngine.fieldsEqualStrict(actual.fields, desired.fields) &&
       MergeEngine.sectionsEqual(actual.sections, desired.sections) &&
       MergeEngine.websitesEqual(actual.websites, desired.websites) &&
       MergeEngine.tagsDesiredSubsetOfActual(desired.tags, actual.tags)
@@ -226,18 +241,24 @@ export class MergeEngine {
 
   /**
    * True when an existing vault item already matches the desired export state.
-   * Fields are compared strictly (order, ids, types, values). Field and file
-   * section membership is compared by section title (not sectionId) because
-   * 1Password may assign different section ids on save. The full section list
-   * is also compared by title multiset so unreferenced sections are included.
-   * Tags match when every desired tag is present on the actual item (order
-   * ignored). Files match when counts are equal and each pair of corresponding
-   * entries shares the same fieldId and sectionId.
+   * Compares title, category, notes, tags, websites, sections (order, id, title),
+   * fields (order, id, title, type, value, sectionId, details), files
+   * (fieldId, sectionId), and optional archive state.
    */
-  static itemsMatchDesired(actual: Item, desired: Item): boolean {
+  static itemsMatchDesired(
+    actual: Item,
+    desired: Item,
+    options?: ItemMatchOptions,
+  ): boolean {
+    const stateMatches =
+      options?.actualState === undefined ||
+      options?.desiredState === undefined ||
+      options.actualState === options.desiredState;
+
     return (
       MergeEngine.itemContentMatchesDesired(actual, desired) &&
-      MergeEngine.filesEqual(actual.files, desired.files)
+      MergeEngine.filesEqual(actual.files, desired.files) &&
+      stateMatches
     );
   }
 
@@ -263,59 +284,36 @@ export class MergeEngine {
     return new Set(item.files.map((f) => f.fieldId));
   }
 
-  private static sectionTitle(
-    sections: ItemSection[],
-    sectionId?: string,
-  ): string {
-    if (!sectionId) return "";
-    return sections.find((section) => section.id === sectionId)?.title ?? "";
+  private static normalizeSectionId(sectionId?: string): string {
+    return sectionId ?? "";
   }
 
-  private static fieldEqual(
-    a: ItemField,
-    b: ItemField,
-    actualSections: ItemSection[],
-    desiredSections: ItemSection[],
-  ): boolean {
+  private static fieldEqual(a: ItemField, b: ItemField): boolean {
     return (
       a.id === b.id &&
       a.title === b.title &&
       a.fieldType === b.fieldType &&
       a.value === b.value &&
       JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null) &&
-      MergeEngine.sectionTitle(actualSections, a.sectionId) ===
-        MergeEngine.sectionTitle(desiredSections, b.sectionId)
+      MergeEngine.normalizeSectionId(a.sectionId) ===
+        MergeEngine.normalizeSectionId(b.sectionId)
     );
   }
 
-  private static fieldsEqualStrict(
-    a: ItemField[],
-    b: ItemField[],
-    actualSections: ItemSection[],
-    desiredSections: ItemSection[],
-  ): boolean {
+  private static fieldsEqualStrict(a: ItemField[], b: ItemField[]): boolean {
     if (a.length !== b.length) return false;
     return a.every((field, index) =>
-      MergeEngine.fieldEqual(
-        field,
-        b[index]!,
-        actualSections,
-        desiredSections,
-      ),
+      MergeEngine.fieldEqual(field, b[index]!),
     );
   }
 
-  /** Compare section lists by title multiset (section ids may differ on save). */
+  /** Compare section lists in order by id and title. */
   private static sectionsEqual(a: ItemSection[], b: ItemSection[]): boolean {
     if (a.length !== b.length) return false;
-
-    const titles = (sections: ItemSection[]) =>
-      sections
-        .map((section) => section.title)
-        .sort()
-        .join("\0");
-
-    return titles(a) === titles(b);
+    return a.every(
+      (section, index) =>
+        section.id === b[index]!.id && section.title === b[index]!.title,
+    );
   }
 
   private static tagsDesiredSubsetOfActual(

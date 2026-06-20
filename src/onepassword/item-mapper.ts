@@ -19,14 +19,14 @@ import {
 } from "./tags.js";
 import type { MappedItem } from "./types.js";
 
-/** Well-known 1Password section IDs used when mapping Bitwarden data. */
+/** Default section used for all mapped fields. */
 export class OnePasswordItemMapper {
-  static readonly CUSTOM_FIELDS_SECTION_ID = "custom_fields";
-  static readonly CUSTOM_FIELDS_SECTION_TITLE = "Custom";
-  static readonly ATTACHMENTS_SECTION_ID = "attachments";
-  static readonly ATTACHMENTS_SECTION_TITLE = "Attachments";
-  static readonly SSH_KEYS_SECTION_ID = "keys";
-  static readonly SSH_KEYS_SECTION_TITLE = "Keys";
+  static readonly DEFAULT_SECTION_ID = "";
+  static readonly DEFAULT_SECTION_TITLE = "";
+  static readonly DEFAULT_SECTION: ItemSection = {
+    id: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+    title: OnePasswordItemMapper.DEFAULT_SECTION_TITLE,
+  };
 
   private static readonly BW_TYPE_TO_CATEGORY: Record<
     ParsedBitwardenItem["type"],
@@ -43,8 +43,8 @@ export class OnePasswordItemMapper {
    * Convert one Bitwarden cipher into 1Password {@link ItemCreateParams}.
    *
    * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
-   * omitted because the 1Password SDK rejects them as tags. Custom fields use
-   * indexed IDs (`cust_0`, …) in the "Custom" section. Attachment metadata is
+   * omitted because the 1Password SDK rejects them as tags. All fields are placed
+   * in the default section (`id: ""`, `title: ""`). Attachment metadata is
    * returned separately for upload after create.
    */
   map(
@@ -90,19 +90,12 @@ export class OnePasswordItemMapper {
         break;
     }
 
-    const hasSshKey = item.type === 5 && Boolean(item.sshKey?.privateKey);
-    const sections = this.buildSections(
-      customFields.length > 0,
-      attachments.length > 0,
-      hasSshKey,
-    );
-
     const params: ItemCreateParams = {
       category,
       vaultId,
       title: item.name,
-      fields: [...builtinFields, ...customFields],
-      sections: sections.length > 0 ? sections : undefined,
+      fields: this.assignDefaultSection([...builtinFields, ...customFields]),
+      sections: [OnePasswordItemMapper.DEFAULT_SECTION],
       notes: notes || undefined,
       tags: tags.length > 0 ? tags : undefined,
       websites,
@@ -313,7 +306,7 @@ export class OnePasswordItemMapper {
         extra.push({
           id: `cust_${customIndex}`,
           title: label,
-          sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
+          sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
           fieldType: ItemFieldType.Text,
           value: value.trim(),
         });
@@ -366,7 +359,7 @@ export class OnePasswordItemMapper {
       {
         id: "private_key",
         title: "private key",
-        sectionId: OnePasswordItemMapper.SSH_KEYS_SECTION_ID,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
         fieldType: ItemFieldType.SshKey,
         value: sshKey.privateKey,
       },
@@ -399,10 +392,18 @@ export class OnePasswordItemMapper {
     return {
       id,
       title,
-      sectionId: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
+      sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       fieldType,
       value,
     };
+  }
+
+  /** Assign every field to the default section for consistent merge comparison. */
+  private assignDefaultSection(fields: ItemField[]): ItemField[] {
+    return fields.map((field) => ({
+      ...field,
+      sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+    }));
   }
 
   /** Stable field IDs for attachment upload (`attach_{sha1}` from file content). */
@@ -416,50 +417,11 @@ export class OnePasswordItemMapper {
     return map;
   }
 
-  private buildSections(
-    hasCustomFields: boolean,
-    hasAttachments: boolean,
-    hasSshKey: boolean,
-  ): ItemSection[] {
-    const sections: ItemSection[] = [];
-
-    if (hasSshKey) {
-      sections.push({
-        id: OnePasswordItemMapper.SSH_KEYS_SECTION_ID,
-        title: OnePasswordItemMapper.SSH_KEYS_SECTION_TITLE,
-      });
-    }
-
-    if (hasCustomFields) {
-      sections.push({
-        id: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID,
-        title: OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_TITLE,
-      });
-    }
-
-    if (hasAttachments) {
-      sections.push({
-        id: OnePasswordItemMapper.ATTACHMENTS_SECTION_ID,
-        title: OnePasswordItemMapper.ATTACHMENTS_SECTION_TITLE,
-      });
-    }
-
-    return sections;
-  }
 }
 
-// Re-export section ID constants for callers.
-export const CUSTOM_FIELDS_SECTION_ID =
-  OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_ID;
-export const CUSTOM_FIELDS_SECTION_TITLE =
-  OnePasswordItemMapper.CUSTOM_FIELDS_SECTION_TITLE;
-export const ATTACHMENTS_SECTION_ID =
-  OnePasswordItemMapper.ATTACHMENTS_SECTION_ID;
-export const ATTACHMENTS_SECTION_TITLE =
-  OnePasswordItemMapper.ATTACHMENTS_SECTION_TITLE;
-export const SSH_KEYS_SECTION_ID = OnePasswordItemMapper.SSH_KEYS_SECTION_ID;
-export const SSH_KEYS_SECTION_TITLE =
-  OnePasswordItemMapper.SSH_KEYS_SECTION_TITLE;
+export const DEFAULT_SECTION_ID = OnePasswordItemMapper.DEFAULT_SECTION_ID;
+export const DEFAULT_SECTION_TITLE = OnePasswordItemMapper.DEFAULT_SECTION_TITLE;
+export const DEFAULT_SECTION = OnePasswordItemMapper.DEFAULT_SECTION;
 
 /**
  * Map a Bitwarden URI match mode to 1Password autofill behavior.
