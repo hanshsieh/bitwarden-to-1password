@@ -139,6 +139,55 @@ describe("migrator", () => {
     expect(client.items.put).toHaveBeenCalledTimes(1);
   });
 
+  it("creates a new item when duplicate export items share one vault match", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
+    const exportItem = {
+      type: 1 as const,
+      name: "Duplicate Login",
+      login: {
+        username: "user@example.com",
+        password: "secret",
+        uris: [{ uri: "https://example.com" }],
+      },
+    };
+    writeFileSync(
+      join(dir, "data.json"),
+      JSON.stringify({
+        encrypted: false,
+        items: [
+          { ...exportItem, id: "bw-1", notes: "First copy" },
+          { ...exportItem, id: "bw-2", notes: "Second copy" },
+        ],
+      }),
+    );
+
+    const { client } = createMockClient({
+      items: [
+        makeLoginItem(
+          "existing-1",
+          "Duplicate Login",
+          "user@example.com",
+        ),
+      ],
+    });
+
+    const summary = await migrate(client, {
+      bwDir: dir,
+      vaultId: "vault-1",
+      mergeStrategy: "merge",
+      dryRun: false,
+    });
+
+    expect(summary.updated).toBe(1);
+    expect(summary.created).toBe(1);
+    expect(client.items.put).toHaveBeenCalledTimes(1);
+    expect(client.items.createAll).toHaveBeenCalledTimes(1);
+    expect(client.items.createAll.mock.calls[0]![1]).toHaveLength(1);
+    expect(client.items.createAll.mock.calls[0]![1][0]?.notes).toBe(
+      "Second copy",
+    );
+  });
+
   it("skips update when existing item already matches export", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bw-migrate-"));
     const exportItem = {

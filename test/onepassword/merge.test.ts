@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ItemCategory, ItemFieldType, ItemState } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
-import { MergeEngine } from "../../src/onepassword/merge-engine.js";
+import { MergeEngine, type MatchIndex } from "../../src/onepassword/merge-engine.js";
 import {
   DEFAULT_SECTION,
   DEFAULT_SECTION_ID,
@@ -157,6 +157,35 @@ describe("merge engine", () => {
     const multi = MergeEngine.decide("merge", ["a", "b"]);
     expect(multi.action).toBe("skip");
     expect(multi.warning ?? "").toMatch(/Multiple matches/);
+  });
+
+  it("consumeMatch removes a claimed item from the index", () => {
+    const key = MergeEngine.buildMatchKey(
+      ItemCategory.Login,
+      "Example Login",
+      "user@example.com",
+    );
+    const matchIndex: MatchIndex = {
+      index: new Map([[key, ["existing-1", "existing-2"]]]),
+      itemsById: new Map(),
+      statesById: new Map(),
+    };
+
+    new MergeEngine(createMockClient().client).consumeMatch(
+      matchIndex,
+      loginItem,
+      "existing-1",
+    );
+
+    expect(matchIndex.index.get(key)).toEqual(["existing-2"]);
+
+    new MergeEngine(createMockClient().client).consumeMatch(
+      matchIndex,
+      loginItem,
+      "existing-2",
+    );
+
+    expect(matchIndex.index.get(key)).toBeUndefined();
   });
 
   it("itemsMatchDesired compares fields strictly including order and ids", () => {

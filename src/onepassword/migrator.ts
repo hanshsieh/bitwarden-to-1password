@@ -218,6 +218,14 @@ export class Migrator {
     const matchIds = this.mergeEngine.findMatches(matchIndex, item);
     const decision = MergeEngine.decide(options.mergeStrategy, matchIds);
 
+    if (decision.targetItemId) {
+      this.mergeEngine.consumeMatch(
+        matchIndex,
+        item,
+        decision.targetItemId,
+      );
+    }
+
     if (decision.warning) {
       console.warn(`"${item.name}": ${decision.warning}`);
     }

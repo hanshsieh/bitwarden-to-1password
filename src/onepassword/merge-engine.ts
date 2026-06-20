@@ -141,10 +141,45 @@ export class MergeEngine {
 
   /** Find existing item IDs that match an export cipher. */
   findMatches(matchIndex: MatchIndex, item: ParsedBitwardenItem): string[] {
+    const key = this.buildMatchKeyForBitwardenItem(item);
+    return matchIndex.index.get(key) ?? [];
+  }
+
+  /**
+   * Remove a vault item from the match index after it is claimed by an export
+   * item. Ensures one 1Password item is not matched to multiple export items.
+   */
+  consumeMatch(
+    matchIndex: MatchIndex,
+    item: ParsedBitwardenItem,
+    itemId: string,
+  ): void {
+    const key = this.buildMatchKeyForBitwardenItem(item);
+    MergeEngine.removeFromIndex(matchIndex, key, itemId);
+  }
+
+  private buildMatchKeyForBitwardenItem(item: ParsedBitwardenItem): MatchKey {
     const category = OnePasswordItemMapper.bitwardenTypeToCategory(item.type);
     const username = this.itemMapper.extractBitwardenUsername(item);
-    const key = MergeEngine.buildMatchKey(category, item.name, username);
-    return matchIndex.index.get(key) ?? [];
+    return MergeEngine.buildMatchKey(category, item.name, username);
+  }
+
+  private static removeFromIndex(
+    matchIndex: MatchIndex,
+    key: MatchKey,
+    itemId: string,
+  ): void {
+    const matchIds = matchIndex.index.get(key);
+    if (!matchIds) {
+      return;
+    }
+
+    const remaining = matchIds.filter((id) => id !== itemId);
+    if (remaining.length === 0) {
+      matchIndex.index.delete(key);
+    } else {
+      matchIndex.index.set(key, remaining);
+    }
   }
 
   /**
