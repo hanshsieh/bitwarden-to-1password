@@ -117,7 +117,16 @@ npm start -- migrate \
 
 Because the 1Password SDK cannot unarchive items, syncing archive state is a **one-way** action. Run migration in two phases:
 
-1. **First run — content only** (no `--include-state`):
+1. **Dry run** — preview what would be imported without writing to 1Password:
+
+   ```bash
+   npm start -- migrate \
+     --bw-dir /path/to/extracted-bitwarden-export \
+     --vault "Bitwarden Migration" \
+     --dry-run
+   ```
+
+2. **First run — content only** (no `--include-state`):
 
    ```bash
    npm start -- migrate \
@@ -125,9 +134,9 @@ Because the 1Password SDK cannot unarchive items, syncing archive state is a **o
      --vault "Bitwarden Migration"
    ```
 
-2. **Verify** imported items in 1Password. Adjust the export or re-run with `--merge-strategy merge` if content needs fixing.
+3. **Verify** imported items in 1Password. Adjust the export or re-run with `--merge-strategy merge` if content needs fixing.
 
-3. **Second run — sync archive state** (irreversible). Use `--merge-strategy merge` so existing items are processed (not skipped) and can be archived:
+4. **Second run — sync archive state** (irreversible). Use `--merge-strategy merge` so existing items are processed (not skipped) and can be archived:
 
    ```bash
    npm start -- migrate \

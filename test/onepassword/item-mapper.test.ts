@@ -35,11 +35,17 @@ describe("item-mapper", () => {
 
     const username = mapped.params.fields?.find((f) => f.id === "username");
     expect(username?.value).toBe("user@example.com");
+    expect(username?.sectionId).toBeUndefined();
+
+    const password = mapped.params.fields?.find((f) => f.id === "password");
+    expect(password?.value).toBe("secret");
+    expect(password?.sectionId).toBeUndefined();
 
     const totp = mapped.params.fields?.find(
       (f) => f.fieldType === ItemFieldType.Totp,
     );
     expect(totp?.value.includes("otpauth://")).toBe(true);
+    expect(totp?.sectionId).toBe(DEFAULT_SECTION_ID);
 
     expect(mapped.params.websites).toHaveLength(2);
     expect(mapped.params.websites?.[0]?.url).toBe("https://example.com");
@@ -92,6 +98,7 @@ describe("item-mapper", () => {
     const expiry = mapped.params.fields?.find((f) => f.id === "expiry");
     expect(expiry?.value).toBe("03/2030");
     expect(expiry?.fieldType).toBe(ItemFieldType.MonthYear);
+    expect(expiry?.sectionId).toBeUndefined();
   });
 
   it("maps identity with address and extra custom fields", () => {
@@ -103,6 +110,7 @@ describe("item-mapper", () => {
 
     const address = mapped.params.fields?.find((f) => f.id === "address");
     expect(address?.fieldType).toBe(ItemFieldType.Address);
+    expect(address?.sectionId).toBeUndefined();
 
     const ssn = mapped.params.fields?.find((f) => f.title === "SSN");
     expect(ssn?.value).toBe("123-45-6789");
@@ -121,15 +129,29 @@ describe("item-mapper", () => {
     expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
   });
 
-  it("always uses the default section for mapped items", () => {
+  it("places custom fields in the default section and leaves built-ins unsectioned", () => {
     const note = parsed.items.find((i) => i.type === 2)!;
-    const mapped = mapper.map(note, parsed, vaultId);
+    const login = parsed.items.find((i) => i.type === 1)!;
+    const mappedNote = mapper.map(note, parsed, vaultId);
+    const mappedLogin = mapper.map(login, parsed, vaultId);
 
-    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(mappedNote.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(mappedLogin.params.sections).toEqual([DEFAULT_SECTION]);
+
+    const customFields =
+      mappedLogin.params.fields?.filter((field) => field.id.startsWith("cust_")) ??
+      [];
+    expect(customFields.length).toBeGreaterThan(0);
     expect(
-      mapped.params.fields?.every(
-        (field) => field.sectionId === DEFAULT_SECTION_ID,
-      ) ?? true,
+      customFields.every((field) => field.sectionId === DEFAULT_SECTION_ID),
+    ).toBe(true);
+
+    const builtInFields =
+      mappedLogin.params.fields?.filter((field) =>
+        ["username", "password"].includes(field.id),
+      ) ?? [];
+    expect(
+      builtInFields.every((field) => field.sectionId === undefined),
     ).toBe(true);
   });
 

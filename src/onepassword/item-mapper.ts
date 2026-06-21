@@ -40,12 +40,34 @@ export class OnePasswordItemMapper {
   };
 
   /**
+   * Category built-in field IDs that must not be placed in a section.
+   * The 1Password SDK treats fields with a sectionId as custom fields.
+   */
+  private static readonly BUILTIN_FIELDS_WITHOUT_SECTION = new Set([
+    "username",
+    "password",
+    "cardholder",
+    "type",
+    "ccnum",
+    "cvv",
+    "expiry",
+    "firstname",
+    "lastname",
+    "email",
+    "company",
+    "defphone",
+    "address",
+  ]);
+
+  /**
    * Convert one Bitwarden cipher into 1Password {@link ItemCreateParams}.
    *
    * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
-   * omitted because the 1Password SDK rejects them as tags. All fields are placed
-   * in the default section (`id: ""`, `title: ""`). Attachment metadata is
-   * returned separately for upload after create.
+   * omitted because the 1Password SDK rejects them as tags. Category built-in
+   * fields (username, password, card details, identity fields, etc.) are left
+   * without a section. Custom Bitwarden fields and other section-scoped fields
+   * (TOTP, SSH keys, attachments) use the default section (`id: ""`, `title: ""`).
+   * Attachment metadata is returned separately for upload after create.
    */
   map(
     item: ParsedBitwardenItem,
@@ -94,7 +116,7 @@ export class OnePasswordItemMapper {
       category,
       vaultId,
       title: item.name,
-      fields: this.assignDefaultSection([...builtinFields, ...customFields]),
+      fields: this.assignFieldSections([...builtinFields, ...customFields]),
       sections: [OnePasswordItemMapper.DEFAULT_SECTION],
       notes: notes || undefined,
       tags: tags.length > 0 ? tags : undefined,
@@ -398,12 +420,22 @@ export class OnePasswordItemMapper {
     };
   }
 
-  /** Assign every field to the default section for consistent merge comparison. */
-  private assignDefaultSection(fields: ItemField[]): ItemField[] {
-    return fields.map((field) => ({
-      ...field,
-      sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
-    }));
+  /**
+   * Leave category built-in fields without a section and assign custom /
+   * section-scoped fields to the default section for consistent merge comparison.
+   */
+  private assignFieldSections(fields: ItemField[]): ItemField[] {
+    return fields.map((field) => {
+      if (OnePasswordItemMapper.BUILTIN_FIELDS_WITHOUT_SECTION.has(field.id)) {
+        const { sectionId: _sectionId, ...builtinField } = field;
+        return builtinField;
+      }
+
+      return {
+        ...field,
+        sectionId: field.sectionId ?? OnePasswordItemMapper.DEFAULT_SECTION_ID,
+      };
+    });
   }
 
   /** Stable field IDs for attachment upload (`attach_{sha1}` from file content). */
