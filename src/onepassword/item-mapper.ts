@@ -340,7 +340,7 @@ export class OnePasswordItemMapper {
           title: label,
           fieldType: ItemFieldType.Text,
           value: value,
-          sectionId: OnePasswordItemMapper.CUSTOM_SECTION_ID,
+          sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
         });
         customIndex++;
       }
