@@ -188,7 +188,7 @@ describe("merge engine", () => {
     expect(matchIndex.index.get(key)).toBeUndefined();
   });
 
-  it("itemsMatchDesired compares fields strictly including order and ids", () => {
+  it("itemsMatchDesired compares fields by id regardless of order", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
@@ -208,14 +208,41 @@ describe("merge engine", () => {
 
     const reordered = structuredClone(synced);
     reordered.fields.reverse();
-    expect(MergeEngine.itemsMatchDesired(reordered, desired)).toBe(false);
+    expect(MergeEngine.itemsMatchDesired(reordered, desired)).toBe(true);
 
     const differentId = structuredClone(synced);
     differentId.fields[0] = { ...differentId.fields[0]!, id: "other" };
     expect(MergeEngine.itemsMatchDesired(differentId, desired)).toBe(false);
   });
 
-  it("itemsMatchDesired requires matching section ids and order", () => {
+  it("itemsMatchDesired throws on duplicate field ids", () => {
+    const existing = makeLoginItem("existing-1", "Login", "user@example.com");
+    const desired = MergeEngine.buildDesiredItem(existing, {
+      category: ItemCategory.Login,
+      vaultId: "vault-1",
+      title: "Login",
+      fields: [
+        {
+          id: "dup",
+          title: "One",
+          fieldType: ItemFieldType.Text,
+          value: "a",
+        },
+        {
+          id: "dup",
+          title: "Two",
+          fieldType: ItemFieldType.Text,
+          value: "b",
+        },
+      ],
+    });
+
+    expect(() => MergeEngine.itemsMatchDesired(existing, desired)).toThrow(
+      /Duplicate field id: dup/,
+    );
+  });
+
+  it("itemsMatchDesired requires matching section ids", () => {
     const existing = makeLoginItem(
       "existing-1",
       "Example Login",
@@ -332,7 +359,7 @@ describe("merge engine", () => {
     expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(false);
   });
 
-  it("itemContentMatchesDesired compares sections by id, title, and order", () => {
+  it("itemContentMatchesDesired compares sections by id and title regardless of order", () => {
     const existing = makeLoginItem("existing-1", "Login", "user@example.com");
     const desired = MergeEngine.buildDesiredItem(existing, {
       category: ItemCategory.Login,
@@ -360,6 +387,33 @@ describe("merge engine", () => {
       DEFAULT_SECTION,
     ];
     expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(false);
+
+    desired.sections = [
+      { id: "first", title: "First" },
+      { id: "second", title: "Second" },
+    ];
+    existing.sections = [
+      { id: "second", title: "Second" },
+      { id: "first", title: "First" },
+    ];
+    expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(true);
+  });
+
+  it("itemContentMatchesDesired throws on duplicate section ids", () => {
+    const existing = makeLoginItem("existing-1", "Login", "user@example.com");
+    const desired = MergeEngine.buildDesiredItem(existing, {
+      category: ItemCategory.Login,
+      vaultId: "vault-1",
+      title: "Login",
+      sections: [
+        { id: "dup", title: "One" },
+        { id: "dup", title: "Two" },
+      ],
+    });
+
+    expect(() =>
+      MergeEngine.itemContentMatchesDesired(existing, desired),
+    ).toThrow(/Duplicate section id: dup/);
   });
 
   it("itemsMatchDesired compares archive state when provided", () => {

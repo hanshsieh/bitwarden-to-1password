@@ -270,10 +270,12 @@ export class MergeEngine {
 
   /**
    * True when field content matches the desired export state (files and archive
-   * state excluded). Sections are compared in order by id and title. Fields are
-   * compared in order by id, title, type, value, details, and sectionId.
+   * state excluded). Sections are compared by id and title. Fields are compared
+   * by id, title, type, value, details, and sectionId.
    */
   static itemContentMatchesDesired(actual: Item, desired: Item): boolean {
+    MergeEngine.assertUniqueFieldAndSectionIds(actual, desired);
+
     return (
       actual.title === desired.title &&
       actual.category === desired.category &&
@@ -287,8 +289,8 @@ export class MergeEngine {
 
   /**
    * True when an existing vault item already matches the desired export state.
-   * Compares title, category, notes, tags, websites, sections (order, id, title),
-   * fields (order, id, title, type, value, sectionId, details), files
+   * Compares title, category, notes, tags, websites, sections (id, title),
+   * fields (id, title, type, value, sectionId, details), files
    * (fieldId, sectionId), and optional archive state.
    */
   static itemsMatchDesired(
@@ -331,7 +333,7 @@ export class MergeEngine {
   }
 
   private static fieldEqual(a: ItemField, b: ItemField): boolean {
-    let result = (
+    return (
       a.id === b.id &&
       a.title === b.title &&
       a.fieldType === b.fieldType &&
@@ -340,7 +342,6 @@ export class MergeEngine {
       (a.fieldType !== ItemFieldType.Address ||
         MergeEngine.addressDetailsEqual(a.details, b.details))
     );
-    return result;
   }
 
   private static addressDetailsEqual(
@@ -373,19 +374,62 @@ export class MergeEngine {
   }
 
   private static fieldsEqualStrict(a: ItemField[], b: ItemField[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((field, index) =>
-      MergeEngine.fieldEqual(field, b[index]!),
-    );
+    const aById = MergeEngine.indexById(a, "field");
+    const bById = MergeEngine.indexById(b, "field");
+    if (aById.size !== bById.size) {
+      return false;
+    }
+
+    for (const [id, fieldA] of aById) {
+      const fieldB = bById.get(id);
+      if (!fieldB || !MergeEngine.fieldEqual(fieldA, fieldB)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
-  /** Compare section lists in order by id and title. */
+  /** Compare section lists by id and title. */
   private static sectionsEqual(a: ItemSection[], b: ItemSection[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every(
-      (section, index) =>
-        section.id === b[index]!.id && section.title === b[index]!.title,
-    );
+    const aById = MergeEngine.indexById(a, "section");
+    const bById = MergeEngine.indexById(b, "section");
+    if (aById.size !== bById.size) {
+      return false;
+    }
+
+    for (const [id, sectionA] of aById) {
+      const sectionB = bById.get(id);
+      if (!sectionB || sectionA.title !== sectionB.title) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private static assertUniqueFieldAndSectionIds(
+    actual: Item,
+    desired: Item,
+  ): void {
+    MergeEngine.indexById(actual.fields, "field");
+    MergeEngine.indexById(desired.fields, "field");
+    MergeEngine.indexById(actual.sections, "section");
+    MergeEngine.indexById(desired.sections, "section");
+  }
+
+  private static indexById<T extends { id: string }>(
+    items: readonly T[],
+    kind: "field" | "section",
+  ): Map<string, T> {
+    const map = new Map<string, T>();
+    for (const item of items) {
+      if (map.has(item.id)) {
+        throw new Error(`Duplicate ${kind} id: ${item.id}`);
+      }
+      map.set(item.id, item);
+    }
+    return map;
   }
 
   private static tagsDesiredSubsetOfActual(
