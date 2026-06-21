@@ -239,6 +239,57 @@ describe("merge engine", () => {
     expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(false);
   });
 
+  it("itemsMatchDesired compares Address field details", () => {
+    const addressField = {
+      id: "address",
+      title: "Address",
+      fieldType: ItemFieldType.Address,
+      value: "",
+      details: {
+        type: "Address" as const,
+        content: {
+          street: "123 Main St",
+          city: "Springfield",
+          state: "IL",
+          zip: "62701",
+          country: "US",
+        },
+      },
+    };
+
+    const existing = makeLoginItem("existing-1", "Identity", "user@example.com");
+    const desired = MergeEngine.buildDesiredItem(existing, {
+      category: ItemCategory.Identity,
+      vaultId: "vault-1",
+      title: "Identity",
+      fields: [addressField],
+    });
+
+    existing.category = desired.category;
+    existing.fields = structuredClone(desired.fields);
+    existing.sections = desired.sections;
+    existing.notes = desired.notes;
+    existing.tags = desired.tags;
+    existing.websites = desired.websites;
+
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(true);
+
+    existing.fields[0] = {
+      ...existing.fields[0]!,
+      details: {
+        type: "Address",
+        content: {
+          street: "456 Oak Ave",
+          city: "Springfield",
+          state: "IL",
+          zip: "62701",
+          country: "US",
+        },
+      },
+    };
+    expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
+  });
+
   it("itemsMatchDesired rejects fields with different section ids", () => {
     const existing = makeLoginItem(
       "existing-1",

@@ -21,7 +21,9 @@ import type { MappedItem } from "./types.js";
 
 /** Default section used for all mapped fields. */
 export class OnePasswordItemMapper {
-  static readonly DEFAULT_SECTION_ID = "";
+  // If the section ID is "add more" and the title is "", then
+  // the UI won't display the section title.
+  static readonly DEFAULT_SECTION_ID = "add more";
   static readonly DEFAULT_SECTION_TITLE = "";
   static readonly DEFAULT_SECTION: ItemSection = {
     id: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -166,9 +168,9 @@ export class OnePasswordItemMapper {
     const uris = item.login?.uris ?? [];
     return uris
       .filter((u) => u.uri != null && u.uri.trim() !== "")
-      .map((u, index) => ({
+      .map((u) => ({
         url: u.uri!.trim(),
-        label: index === 0 ? "website" : `website ${index + 1}`,
+        label: "website",
         autofillBehavior: bitwardenUriMatchToAutofillBehavior(u.match),
       }));
   }
@@ -180,7 +182,7 @@ export class OnePasswordItemMapper {
     if (login.username != null && login.username !== "") {
       fields.push({
         id: "username",
-        title: "username",
+        title: "Username",
         fieldType: ItemFieldType.Text,
         value: login.username,
       });
@@ -189,7 +191,7 @@ export class OnePasswordItemMapper {
     if (login.password != null && login.password !== "") {
       fields.push({
         id: "password",
-        title: "password",
+        title: "Password",
         fieldType: ItemFieldType.Concealed,
         value: login.password,
       });
@@ -198,7 +200,7 @@ export class OnePasswordItemMapper {
     if (login.totp != null && login.totp !== "") {
       fields.push({
         id: "onetimepassword",
-        title: "one-time password",
+        title: "One-Time Password",
         fieldType: ItemFieldType.Totp,
         value: login.totp,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -215,7 +217,7 @@ export class OnePasswordItemMapper {
     if (card.cardholderName) {
       fields.push({
         id: "cardholder",
-        title: "cardholder name",
+        title: "Cardholder Name",
         fieldType: ItemFieldType.Text,
         value: card.cardholderName,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -225,7 +227,7 @@ export class OnePasswordItemMapper {
     if (card.brand) {
       fields.push({
         id: "type",
-        title: "type",
+        title: "Type",
         fieldType: ItemFieldType.CreditCardType,
         value: card.brand,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -235,7 +237,7 @@ export class OnePasswordItemMapper {
     if (card.number) {
       fields.push({
         id: "ccnum",
-        title: "number",
+        title: "Number",
         fieldType: ItemFieldType.CreditCardNumber,
         value: card.number,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -245,7 +247,7 @@ export class OnePasswordItemMapper {
     if (card.code) {
       fields.push({
         id: "cvv",
-        title: "verification number",
+        title: "Verification Number",
         fieldType: ItemFieldType.Concealed,
         value: card.code,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -256,7 +258,7 @@ export class OnePasswordItemMapper {
     if (expiry) {
       fields.push({
         id: "expiry",
-        title: "expiry date",
+        title: "Expiry Date",
         fieldType: ItemFieldType.MonthYear,
         value: expiry,
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
@@ -311,14 +313,14 @@ export class OnePasswordItemMapper {
       }
     };
 
-    addBuiltin("firstname", "first name", identity.firstName);
-    addBuiltin("lastname", "last name", identity.lastName);
-    addBuiltin("email", "email", identity.email, ItemFieldType.Email);
-    addBuiltin("username", "username", identity.username);
-    addBuiltin("company", "company", identity.company);
+    addBuiltin("firstname", "First Name", identity.firstName);
+    addBuiltin("lastname", "Last Name", identity.lastName);
+    addBuiltin("email", "Email", identity.email, ItemFieldType.Email);
+    addBuiltin("username", "Username", identity.username);
+    addBuiltin("company", "Company", identity.company);
     addBuiltin(
       "defphone",
-      "default phone",
+      "Default Phone",
       identity.phone,
       ItemFieldType.Phone,
     );
@@ -392,7 +394,7 @@ export class OnePasswordItemMapper {
     return [
       {
         id: "private_key",
-        title: "private key",
+        title: "Private Key",
         sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
         fieldType: ItemFieldType.SshKey,
         value: sshKey.privateKey,

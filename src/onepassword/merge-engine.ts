@@ -3,11 +3,13 @@ import type {
   ItemCategory,
   ItemCreateParams,
   ItemField,
+  ItemFieldDetails,
   ItemFile,
   ItemSection,
   ItemState,
   Website,
 } from "@1password/sdk";
+import { ItemFieldType } from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
 import { filterSdkSafeTags } from "./tags.js";
 import { DEFAULT_SECTION_ID, OnePasswordItemMapper } from "./item-mapper.js";
@@ -328,19 +330,45 @@ export class MergeEngine {
     return new Set(item.files.map((f) => f.fieldId));
   }
 
-  private static normalizeSectionId(sectionId?: string): string {
-    return sectionId ?? "";
-  }
-
   private static fieldEqual(a: ItemField, b: ItemField): boolean {
-    return (
+    let result = (
       a.id === b.id &&
       a.title === b.title &&
       a.fieldType === b.fieldType &&
       a.value === b.value &&
-      JSON.stringify(a.details ?? null) === JSON.stringify(b.details ?? null) &&
-      MergeEngine.normalizeSectionId(a.sectionId) ===
-        MergeEngine.normalizeSectionId(b.sectionId)
+      a.sectionId === b.sectionId &&
+      (a.fieldType !== ItemFieldType.Address ||
+        MergeEngine.addressDetailsEqual(a.details, b.details))
+    );
+    return result;
+  }
+
+  private static addressDetailsEqual(
+    a: ItemFieldDetails | undefined,
+    b: ItemFieldDetails | undefined,
+  ): boolean {
+    if (a === b) {
+      return true;
+    }
+    if (a?.type !== "Address" || b?.type !== "Address") {
+      return false;
+    }
+
+    const left = a.content;
+    const right = b.content;
+    if (left === right) {
+      return true;
+    }
+    if (!left || !right) {
+      return false;
+    }
+
+    return (
+      left.street === right.street &&
+      left.city === right.city &&
+      left.state === right.state &&
+      left.zip === right.zip &&
+      left.country === right.country
     );
   }
 
