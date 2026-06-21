@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import {
-  DEFAULT_SECTION,
-  DEFAULT_SECTION_ID,
+  BUILTIN_SECTION,
+  BUILTIN_SECTION_ID,
+  CUSTOM_SECTION,
+  CUSTOM_SECTION_ID,
   OnePasswordItemMapper,
   bitwardenUriMatchToAutofillBehavior,
 } from "../../src/onepassword/item-mapper.js";
@@ -45,7 +47,7 @@ describe("item-mapper", () => {
       (f) => f.fieldType === ItemFieldType.Totp,
     );
     expect(totp?.value.includes("otpauth://")).toBe(true);
-    expect(totp?.sectionId).toBe(DEFAULT_SECTION_ID);
+    expect(totp?.sectionId).toBe(CUSTOM_SECTION_ID);
 
     expect(mapped.params.websites).toHaveLength(2);
     expect(mapped.params.websites?.[0]?.url).toBe("https://example.com");
@@ -56,8 +58,8 @@ describe("item-mapper", () => {
     const pin = mapped.params.fields?.find((f) => f.title === "Secret PIN");
     expect(pin?.fieldType).toBe(ItemFieldType.Concealed);
     expect(pin?.id).toBe("cust_1");
-    expect(pin?.sectionId).toBe(DEFAULT_SECTION_ID);
-    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(pin?.sectionId).toBe(CUSTOM_SECTION_ID);
+    expect(mapped.params.sections).toEqual([CUSTOM_SECTION]);
 
     expect(
       mapped.params.fields?.some((f) => f.title.includes("Linked field")),
@@ -98,7 +100,8 @@ describe("item-mapper", () => {
     const expiry = mapped.params.fields?.find((f) => f.id === "expiry");
     expect(expiry?.value).toBe("03/2030");
     expect(expiry?.fieldType).toBe(ItemFieldType.MonthYear);
-    expect(expiry?.sectionId).toBeUndefined();
+    expect(expiry?.sectionId).toBe(BUILTIN_SECTION_ID);
+    expect(mapped.params.sections).toEqual([BUILTIN_SECTION]);
   });
 
   it("maps identity with address and extra custom fields", () => {
@@ -110,12 +113,13 @@ describe("item-mapper", () => {
 
     const address = mapped.params.fields?.find((f) => f.id === "address");
     expect(address?.fieldType).toBe(ItemFieldType.Address);
-    expect(address?.sectionId).toBeUndefined();
+    expect(address?.sectionId).toBe(BUILTIN_SECTION_ID);
 
     const ssn = mapped.params.fields?.find((f) => f.title === "SSN");
     expect(ssn?.value).toBe("123-45-6789");
     expect(ssn?.id ?? "").toMatch(/^cust_\d+$/);
-    expect(ssn?.sectionId).toBe(DEFAULT_SECTION_ID);
+    expect(ssn?.sectionId).toBe(CUSTOM_SECTION_ID);
+    expect(mapped.params.sections).toEqual([BUILTIN_SECTION, CUSTOM_SECTION]);
   });
 
   it("maps SSH key private key field", () => {
@@ -125,25 +129,25 @@ describe("item-mapper", () => {
     expect(mapped.params.category).toBe(ItemCategory.SshKey);
     const privateKey = mapped.params.fields?.find((f) => f.id === "private_key");
     expect(privateKey?.fieldType).toBe(ItemFieldType.SshKey);
-    expect(privateKey?.sectionId).toBe(DEFAULT_SECTION_ID);
-    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(privateKey?.sectionId).toBe(CUSTOM_SECTION_ID);
+    expect(mapped.params.sections).toEqual([CUSTOM_SECTION]);
   });
 
-  it("places custom fields in the default section and leaves built-ins unsectioned", () => {
+  it("places custom fields in the custom section and built-ins in the top section", () => {
     const note = parsed.items.find((i) => i.type === 2)!;
     const login = parsed.items.find((i) => i.type === 1)!;
     const mappedNote = mapper.map(note, parsed, vaultId);
     const mappedLogin = mapper.map(login, parsed, vaultId);
 
-    expect(mappedNote.params.sections).toEqual([DEFAULT_SECTION]);
-    expect(mappedLogin.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(mappedNote.params.sections).toEqual([]);
+    expect(mappedLogin.params.sections).toEqual([CUSTOM_SECTION]);
 
     const customFields =
       mappedLogin.params.fields?.filter((field) => field.id.startsWith("cust_")) ??
       [];
     expect(customFields.length).toBeGreaterThan(0);
     expect(
-      customFields.every((field) => field.sectionId === DEFAULT_SECTION_ID),
+      customFields.every((field) => field.sectionId === CUSTOM_SECTION_ID),
     ).toBe(true);
 
     const builtInFields =
@@ -169,7 +173,7 @@ describe("item-mapper", () => {
     ];
     const mapped = mapper.map(login, parsed, vaultId, attachments);
 
-    expect(mapped.params.sections).toEqual([DEFAULT_SECTION]);
+    expect(mapped.params.sections).toEqual([CUSTOM_SECTION]);
     expect(mapped.attachmentFieldIds.get(filePath)).toBe(
       attachmentFieldId(Buffer.from("hello")),
     );

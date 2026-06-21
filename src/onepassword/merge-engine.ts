@@ -12,7 +12,7 @@ import type {
 import { ItemFieldType } from "@1password/sdk";
 import type { ParsedBitwardenItem } from "../bitwarden/types.js";
 import { filterSdkSafeTags } from "./tags.js";
-import { DEFAULT_SECTION_ID, OnePasswordItemMapper } from "./item-mapper.js";
+import { CUSTOM_SECTION_ID, OnePasswordItemMapper } from "./item-mapper.js";
 import type {
   MappedItem,
   MergeDecision,
@@ -261,7 +261,7 @@ export class MergeEngine {
         name: attachment.filename,
         size: 0,
       },
-      sectionId: DEFAULT_SECTION_ID,
+      sectionId: CUSTOM_SECTION_ID,
       fieldId:
         mapped.attachmentFieldIds.get(attachment.filePath) ??
         attachment.filename,
@@ -338,7 +338,7 @@ export class MergeEngine {
       a.title === b.title &&
       a.fieldType === b.fieldType &&
       a.value === b.value &&
-      a.sectionId === b.sectionId &&
+      (a.sectionId ?? null) === (b.sectionId ?? null) &&
       (a.fieldType !== ItemFieldType.Address ||
         MergeEngine.addressDetailsEqual(a.details, b.details))
     );
@@ -383,6 +383,7 @@ export class MergeEngine {
     for (const [id, fieldA] of aById) {
       const fieldB = bById.get(id);
       if (!fieldB || !MergeEngine.fieldEqual(fieldA, fieldB)) {
+        console.log("Field not equal:", JSON.stringify(fieldA), JSON.stringify(fieldB));
         return false;
       }
     }

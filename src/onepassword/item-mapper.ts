@@ -19,15 +19,25 @@ import {
 } from "./tags.js";
 import type { MappedItem } from "./types.js";
 
-/** Default section used for all mapped fields. */
 export class OnePasswordItemMapper {
-  // If the section ID is "add more" and the title is "", then
-  // the UI won't display the section title.
-  static readonly DEFAULT_SECTION_ID = "add more";
-  static readonly DEFAULT_SECTION_TITLE = "";
-  static readonly DEFAULT_SECTION: ItemSection = {
-    id: OnePasswordItemMapper.DEFAULT_SECTION_ID,
-    title: OnePasswordItemMapper.DEFAULT_SECTION_TITLE,
+  /**
+   * Top-area section for category built-in fields (card details, identity fields).
+   * Displayed together with username and password.
+   */
+  static readonly BUILTIN_SECTION_ID = "";
+  static readonly BUILTIN_SECTION: ItemSection = {
+    id: OnePasswordItemMapper.BUILTIN_SECTION_ID,
+    title: "",
+  };
+
+  /**
+   * Section for custom / extra fields. With title "", the UI shows the section
+   * without a heading.
+   */
+  static readonly CUSTOM_SECTION_ID = "add more";
+  static readonly CUSTOM_SECTION: ItemSection = {
+    id: OnePasswordItemMapper.CUSTOM_SECTION_ID,
+    title: "",
   };
 
   private static readonly BW_TYPE_TO_CATEGORY: Record<
@@ -42,33 +52,14 @@ export class OnePasswordItemMapper {
   };
 
   /**
-   * Category built-in field IDs that must not be placed in a section.
-   * The 1Password SDK treats fields with a sectionId as custom fields.
-   */
-  private static readonly BUILTIN_FIELDS_WITHOUT_SECTION = new Set([
-    "username",
-    "password",
-    "cardholder",
-    "type",
-    "ccnum",
-    "cvv",
-    "expiry",
-    "firstname",
-    "lastname",
-    "email",
-    "company",
-    "defphone",
-    "address",
-  ]);
-
-  /**
    * Convert one Bitwarden cipher into 1Password {@link ItemCreateParams}.
    *
    * Folder and collection names become tags when ASCII-safe; non-ASCII labels are
    * omitted because the 1Password SDK rejects them as tags. Category built-in
-   * fields (username, password, card details, identity fields, etc.) are left
-   * without a section. Custom Bitwarden fields and other section-scoped fields
-   * (TOTP, SSH keys, attachments) use the default section (`id: ""`, `title: ""`).
+   * Login username/password stay unsectioned. Other category built-ins (card
+   * details, identity fields) use the top-area section (`id: ""`). Custom
+   * Bitwarden fields, TOTP, SSH keys, and attachments use the custom section
+   * (`id: "add more"`, `title: ""`).
    * Attachment metadata is returned separately for upload after create.
    */
   map(
@@ -114,12 +105,14 @@ export class OnePasswordItemMapper {
         break;
     }
 
+    const fields = [...builtinFields, ...customFields];
+
     const params: ItemCreateParams = {
       category,
       vaultId,
       title: item.name,
-      fields: this.assignFieldSections([...builtinFields, ...customFields]),
-      sections: [OnePasswordItemMapper.DEFAULT_SECTION],
+      fields,
+      sections: this.buildSections(fields, attachments.length > 0),
       notes: notes || undefined,
       tags: tags.length > 0 ? tags : undefined,
       websites,
@@ -182,7 +175,8 @@ export class OnePasswordItemMapper {
     if (login.username != null && login.username !== "") {
       fields.push({
         id: "username",
-        title: "Username",
+        // When id is "username", the title must be "username".
+        title: "username",
         fieldType: ItemFieldType.Text,
         value: login.username,
       });
@@ -191,7 +185,8 @@ export class OnePasswordItemMapper {
     if (login.password != null && login.password !== "") {
       fields.push({
         id: "password",
-        title: "Password",
+        // When id is "password", the title must be "password".
+        title: "password",
         fieldType: ItemFieldType.Concealed,
         value: login.password,
       });
@@ -199,11 +194,12 @@ export class OnePasswordItemMapper {
 
     if (login.totp != null && login.totp !== "") {
       fields.push({
-        id: "onetimepassword",
+        // This is a special ID
+        id: "TOTP_onetimepassword",
         title: "One-Time Password",
         fieldType: ItemFieldType.Totp,
         value: login.totp,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.CUSTOM_SECTION_ID,
       });
     }
 
@@ -220,7 +216,7 @@ export class OnePasswordItemMapper {
         title: "Cardholder Name",
         fieldType: ItemFieldType.Text,
         value: card.cardholderName,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       });
     }
 
@@ -230,7 +226,7 @@ export class OnePasswordItemMapper {
         title: "Type",
         fieldType: ItemFieldType.CreditCardType,
         value: card.brand,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       });
     }
 
@@ -240,7 +236,7 @@ export class OnePasswordItemMapper {
         title: "Number",
         fieldType: ItemFieldType.CreditCardNumber,
         value: card.number,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       });
     }
 
@@ -250,7 +246,7 @@ export class OnePasswordItemMapper {
         title: "Verification Number",
         fieldType: ItemFieldType.Concealed,
         value: card.code,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       });
     }
 
@@ -261,7 +257,7 @@ export class OnePasswordItemMapper {
         title: "Expiry Date",
         fieldType: ItemFieldType.MonthYear,
         value: expiry,
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       });
     }
 
@@ -303,12 +299,12 @@ export class OnePasswordItemMapper {
       fieldType: ItemFieldType = ItemFieldType.Text,
     ) => {
       if (value != null && value.trim() !== "") {
-        builtin.push({ 
-          id, 
-          title, 
-          fieldType, 
-          value: value, 
-          sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        builtin.push({
+          id,
+          title,
+          fieldType,
+          value,
+          sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
         });
       }
     };
@@ -342,9 +338,9 @@ export class OnePasswordItemMapper {
         extra.push({
           id: `cust_${customIndex}`,
           title: label,
-          sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
           fieldType: ItemFieldType.Text,
           value: value,
+          sectionId: OnePasswordItemMapper.CUSTOM_SECTION_ID,
         });
         customIndex++;
       }
@@ -380,6 +376,7 @@ export class OnePasswordItemMapper {
       title: "Address",
       fieldType: ItemFieldType.Address,
       value: "",
+      sectionId: OnePasswordItemMapper.BUILTIN_SECTION_ID,
       details: {
         type: "Address",
         content: { street, city, state, zip, country },
@@ -395,9 +392,9 @@ export class OnePasswordItemMapper {
       {
         id: "private_key",
         title: "Private Key",
-        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
         fieldType: ItemFieldType.SshKey,
         value: sshKey.privateKey,
+        sectionId: OnePasswordItemMapper.CUSTOM_SECTION_ID,
       },
     ];
   }
@@ -428,28 +425,34 @@ export class OnePasswordItemMapper {
     return {
       id,
       title,
-      sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       fieldType,
       value,
+      sectionId: OnePasswordItemMapper.CUSTOM_SECTION_ID,
     };
   }
 
-  /**
-   * Leave category built-in fields without a section and assign custom /
-   * section-scoped fields to the default section for consistent merge comparison.
-   */
-  private assignFieldSections(fields: ItemField[]): ItemField[] {
-    return fields.map((field) => {
-      if (OnePasswordItemMapper.BUILTIN_FIELDS_WITHOUT_SECTION.has(field.id)) {
-        const { sectionId: _sectionId, ...builtinField } = field;
-        return builtinField;
-      }
+  /** Build the sections list from field section IDs and attachment presence. */
+  private buildSections(
+    fields: ItemField[],
+    hasAttachments: boolean,
+  ): ItemSection[] {
+    const sectionIds = new Set(
+      fields
+        .map((field) => field.sectionId)
+        .filter((sectionId): sectionId is string => sectionId != null),
+    );
+    if (hasAttachments) {
+      sectionIds.add(OnePasswordItemMapper.CUSTOM_SECTION_ID);
+    }
 
-      return {
-        ...field,
-        sectionId: field.sectionId ?? OnePasswordItemMapper.DEFAULT_SECTION_ID,
-      };
-    });
+    const sections: ItemSection[] = [];
+    if (sectionIds.has(OnePasswordItemMapper.BUILTIN_SECTION_ID)) {
+      sections.push(OnePasswordItemMapper.BUILTIN_SECTION);
+    }
+    if (sectionIds.has(OnePasswordItemMapper.CUSTOM_SECTION_ID)) {
+      sections.push(OnePasswordItemMapper.CUSTOM_SECTION);
+    }
+    return sections;
   }
 
   /** Stable field IDs for attachment upload (`attach_{sha1}` from file content). */
@@ -465,9 +468,10 @@ export class OnePasswordItemMapper {
 
 }
 
-export const DEFAULT_SECTION_ID = OnePasswordItemMapper.DEFAULT_SECTION_ID;
-export const DEFAULT_SECTION_TITLE = OnePasswordItemMapper.DEFAULT_SECTION_TITLE;
-export const DEFAULT_SECTION = OnePasswordItemMapper.DEFAULT_SECTION;
+export const BUILTIN_SECTION_ID = OnePasswordItemMapper.BUILTIN_SECTION_ID;
+export const BUILTIN_SECTION = OnePasswordItemMapper.BUILTIN_SECTION;
+export const CUSTOM_SECTION_ID = OnePasswordItemMapper.CUSTOM_SECTION_ID;
+export const CUSTOM_SECTION = OnePasswordItemMapper.CUSTOM_SECTION;
 
 /**
  * Map a Bitwarden URI match mode to 1Password autofill behavior.

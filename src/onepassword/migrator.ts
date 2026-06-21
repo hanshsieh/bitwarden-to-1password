@@ -13,7 +13,7 @@ import {
   hasNonAsciiBitwardenLabels,
 } from "./tags.js";
 import {
-  DEFAULT_SECTION_ID,
+  CUSTOM_SECTION_ID,
   OnePasswordItemMapper,
 } from "./item-mapper.js";
 import { MergeEngine, type MatchIndex } from "./merge-engine.js";
@@ -504,7 +504,7 @@ export class Migrator {
         current = await this.client.items.files.attach(current, {
           name: attachment.filename,
           content,
-          sectionId: DEFAULT_SECTION_ID,
+          sectionId: CUSTOM_SECTION_ID,
           fieldId,
         });
         summary.attachmentsUploaded++;
@@ -544,7 +544,7 @@ export class Migrator {
         current = await this.client.items.files.attach(current, {
           name: attachment.filename,
           content,
-          sectionId: DEFAULT_SECTION_ID,
+          sectionId: CUSTOM_SECTION_ID,
           fieldId,
         });
         skipFieldIds.add(fieldId);

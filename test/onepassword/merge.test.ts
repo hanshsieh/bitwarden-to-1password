@@ -4,8 +4,8 @@ import { ItemCategory, ItemFieldType, ItemState } from "@1password/sdk";
 import { parseExport } from "../../src/bitwarden/export-parser.js";
 import { MergeEngine, type MatchIndex } from "../../src/onepassword/merge-engine.js";
 import {
-  DEFAULT_SECTION,
-  DEFAULT_SECTION_ID,
+  CUSTOM_SECTION,
+  CUSTOM_SECTION_ID,
   OnePasswordItemMapper,
 } from "../../src/onepassword/item-mapper.js";
 import {
@@ -340,6 +340,29 @@ describe("merge engine", () => {
     expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(false);
   });
 
+  it("itemsMatchDesired treats null and undefined section ids as equal", () => {
+    const existing = makeLoginItem(
+      "existing-1",
+      "Example Login",
+      "user@example.com",
+    );
+    const mapped = mapper.map(loginItem, parsed, "vault-1");
+    const desired = MergeEngine.buildDesiredItem(
+      existing,
+      mapped.params,
+      MergeEngine.expectedFilesFromMapped(mapped),
+    );
+    const synced = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
+
+    synced.fields = synced.fields.map((field) =>
+      field.id === "username"
+        ? { ...field, sectionId: null as unknown as undefined }
+        : field,
+    );
+
+    expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(true);
+  });
+
   it("itemsMatchDesired rejects sections with different titles", () => {
     const existing = makeLoginItem(
       "existing-1",
@@ -354,7 +377,7 @@ describe("merge engine", () => {
     );
     const synced = MergeEngine.applyDesiredContent(structuredClone(existing), desired);
 
-    synced.sections = [{ id: DEFAULT_SECTION_ID, title: "Other" }];
+    synced.sections = [{ id: CUSTOM_SECTION_ID, title: "Other" }];
 
     expect(MergeEngine.itemsMatchDesired(synced, desired)).toBe(false);
   });
@@ -365,26 +388,26 @@ describe("merge engine", () => {
       category: ItemCategory.Login,
       vaultId: "vault-1",
       title: "Login",
-      sections: [DEFAULT_SECTION],
+      sections: [CUSTOM_SECTION],
     });
 
     existing.fields = desired.fields;
     existing.websites = desired.websites;
     existing.notes = desired.notes;
     existing.tags = desired.tags;
-    existing.sections = [{ id: DEFAULT_SECTION_ID, title: "Wrong Title" }];
+    existing.sections = [{ id: CUSTOM_SECTION_ID, title: "Wrong Title" }];
 
     expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(false);
 
-    existing.sections = [{ id: "server_assigned", title: DEFAULT_SECTION.title }];
+    existing.sections = [{ id: "server_assigned", title: CUSTOM_SECTION.title }];
     expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(false);
 
-    existing.sections = [DEFAULT_SECTION];
+    existing.sections = [CUSTOM_SECTION];
     expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(true);
 
     existing.sections = [
       { id: "extra", title: "Extra" },
-      DEFAULT_SECTION,
+      CUSTOM_SECTION,
     ];
     expect(MergeEngine.itemContentMatchesDesired(existing, desired)).toBe(false);
 
@@ -422,7 +445,7 @@ describe("merge engine", () => {
       category: ItemCategory.Login,
       vaultId: "vault-1",
       title: "Login",
-      sections: [DEFAULT_SECTION],
+      sections: [CUSTOM_SECTION],
     });
 
     existing.fields = desired.fields;
@@ -481,12 +504,12 @@ describe("merge engine", () => {
         category: ItemCategory.Login,
         vaultId: "vault-1",
         title: "Example Login",
-        sections: [DEFAULT_SECTION],
+        sections: [CUSTOM_SECTION],
       },
       [
         {
           attributes: { id: "file-1", name: "readme.txt", size: 5 },
-          sectionId: DEFAULT_SECTION_ID,
+          sectionId: CUSTOM_SECTION_ID,
           fieldId: "attach_abc",
         },
       ],
@@ -511,7 +534,7 @@ describe("merge engine", () => {
     existing.files[0] = structuredClone(desired.files[0]!);
     existing.files.push({
       attributes: { id: "file-2", name: "extra.txt", size: 1 },
-      sectionId: DEFAULT_SECTION_ID,
+      sectionId: CUSTOM_SECTION_ID,
       fieldId: "attach_def",
     });
     expect(MergeEngine.itemsMatchDesired(existing, desired)).toBe(false);
