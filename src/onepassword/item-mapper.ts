@@ -442,7 +442,7 @@ export class OnePasswordItemMapper {
         .filter((sectionId): sectionId is string => sectionId != null),
     );
     if (hasAttachments) {
-      sectionIds.add(OnePasswordItemMapper.CUSTOM_SECTION_ID);
+      sectionIds.add(OnePasswordItemMapper.BUILTIN_SECTION_ID);
     }
 
     const sections: ItemSection[] = [];

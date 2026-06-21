@@ -383,7 +383,6 @@ export class MergeEngine {
     for (const [id, fieldA] of aById) {
       const fieldB = bById.get(id);
       if (!fieldB || !MergeEngine.fieldEqual(fieldA, fieldB)) {
-        console.log("Field not equal:", JSON.stringify(fieldA), JSON.stringify(fieldB));
         return false;
       }
     }
