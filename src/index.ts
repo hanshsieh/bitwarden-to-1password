@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runGetItem } from "./cli/get-item.js";
 import { runListVaults } from "./cli/list-vaults.js";
 import { runMigrate } from "./cli/migrate.js";
 import { runPurge } from "./cli/purge-1p.js";
@@ -73,6 +74,28 @@ program
   .action(async () => {
     try {
       const code = await runListVaults();
+      process.exit(code);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("get-item")
+  .description("Print the full content of a 1Password item as JSON")
+  .requiredOption(
+    "--vault <id-or-title>",
+    "Target vault ID or title substring (case-insensitive)",
+  )
+  .requiredOption("--item <id>", "Target item ID")
+  .action(async (opts) => {
+    try {
+      const code = await runGetItem({
+        vault: opts.vault,
+        item: opts.item,
+      });
       process.exit(code);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
