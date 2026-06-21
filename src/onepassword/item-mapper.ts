@@ -201,6 +201,7 @@ export class OnePasswordItemMapper {
         title: "one-time password",
         fieldType: ItemFieldType.Totp,
         value: login.totp,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -217,6 +218,7 @@ export class OnePasswordItemMapper {
         title: "cardholder name",
         fieldType: ItemFieldType.Text,
         value: card.cardholderName,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -226,6 +228,7 @@ export class OnePasswordItemMapper {
         title: "type",
         fieldType: ItemFieldType.CreditCardType,
         value: card.brand,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -235,6 +238,7 @@ export class OnePasswordItemMapper {
         title: "number",
         fieldType: ItemFieldType.CreditCardNumber,
         value: card.number,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -244,6 +248,7 @@ export class OnePasswordItemMapper {
         title: "verification number",
         fieldType: ItemFieldType.Concealed,
         value: card.code,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -254,6 +259,7 @@ export class OnePasswordItemMapper {
         title: "expiry date",
         fieldType: ItemFieldType.MonthYear,
         value: expiry,
+        sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
       });
     }
 
@@ -295,7 +301,13 @@ export class OnePasswordItemMapper {
       fieldType: ItemFieldType = ItemFieldType.Text,
     ) => {
       if (value != null && value.trim() !== "") {
-        builtin.push({ id, title, fieldType, value: value.trim() });
+        builtin.push({ 
+          id, 
+          title, 
+          fieldType, 
+          value: value, 
+          sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
+        });
       }
     };
 
@@ -330,7 +342,7 @@ export class OnePasswordItemMapper {
           title: label,
           sectionId: OnePasswordItemMapper.DEFAULT_SECTION_ID,
           fieldType: ItemFieldType.Text,
-          value: value.trim(),
+          value: value,
         });
         customIndex++;
       }
